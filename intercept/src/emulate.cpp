@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2018-2020 Intel Corporation
+// Copyright (c) 2018-2021 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -133,7 +133,8 @@ cl_int CL_API_CALL clMemBlockingFreeINTEL_EMU(
 
     if( pIntercept && pIntercept->config().Emulate_cl_intel_unified_shared_memory )
     {
-        // TODO: Track queues and block all.
+        pIntercept->finishAll( context );
+
         return pIntercept->emulatedMemFree(
             context,
             ptr );

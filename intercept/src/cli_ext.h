@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2018-2020 Intel Corporation
+// Copyright (c) 2018-2021 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -383,6 +383,28 @@ cl_program CL_API_CALL clCreateProgramWithILKHR(
 #define CL_CONTEXT_MEMORY_INITIALIZE_KHR            0x2030
 
 ///////////////////////////////////////////////////////////////////////////////
+// cl_khr_integer_dot_product
+
+typedef cl_bitfield         cl_device_integer_dot_product_capabilities_khr;
+
+#define CL_DEVICE_INTEGER_DOT_PRODUCT_INPUT_4x8BIT_PACKED_KHR (1 << 0)
+#define CL_DEVICE_INTEGER_DOT_PRODUCT_INPUT_4x8BIT_KHR      (1 << 1)
+
+#define CL_DEVICE_INTEGER_DOT_PRODUCT_CAPABILITIES_KHR      0x1073
+
+///////////////////////////////////////////////////////////////////////////////
+// cl_khr_pci_bus_info
+
+typedef struct _cl_device_pci_bus_info_khr {
+    cl_uint pci_domain;
+    cl_uint pci_bus;
+    cl_uint pci_device;
+    cl_uint pci_function;
+} cl_device_pci_bus_info_khr;
+
+#define CL_DEVICE_PCI_BUS_INFO_KHR                  0x410F
+
+///////////////////////////////////////////////////////////////////////////////
 // cl_khr_priority_hints
 
 #define CL_QUEUE_PRIORITY_KHR 0x1096
@@ -415,6 +437,19 @@ cl_int CL_API_CALL clGetKernelSubGroupInfoKHR(
     size_t* param_value_size_ret);
 
 ///////////////////////////////////////////////////////////////////////////////
+// cl_khr_suggested_local_work_size
+
+extern CL_API_ENTRY
+cl_int CL_API_CALL
+clGetKernelSuggestedLocalWorkSizeKHR(
+    cl_command_queue command_queue,
+    cl_kernel kernel,
+    cl_uint work_dim,
+    const size_t* global_work_offset,
+    const size_t* global_work_size,
+    size_t* suggested_local_work_size);
+
+///////////////////////////////////////////////////////////////////////////////
 // cl_khr_terminate_context
 
 #define CL_DEVICE_TERMINATE_CAPABILITY_KHR          0x2031
@@ -427,7 +462,6 @@ cl_int CL_API_CALL clGetKernelSubGroupInfoKHR(
 #define CL_QUEUE_THROTTLE_HIGH_KHR (1<<0)
 #define CL_QUEUE_THROTTLE_MED_KHR (1<<1)
 #define CL_QUEUE_THROTTLE_LOW_KHR (1<<2)
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // cl_ext_atomic_counters
@@ -456,6 +490,15 @@ cl_int CL_API_CALL clGetKernelSubGroupInfoKHR(
 #define CL_INVALID_PARTITION_COUNT_EXT              -1058
 #define CL_INVALID_PARTITION_NAME_EXT               -1059
 
+#define CL_AFFINITY_DOMAIN_L1_CACHE_EXT             0x1
+#define CL_AFFINITY_DOMAIN_L2_CACHE_EXT             0x2
+#define CL_AFFINITY_DOMAIN_L3_CACHE_EXT             0x3
+#define CL_AFFINITY_DOMAIN_L4_CACHE_EXT             0x4
+#define CL_AFFINITY_DOMAIN_NUMA_EXT                 0x10
+#define CL_AFFINITY_DOMAIN_NEXT_FISSIONABLE_EXT     0x100
+
+#define CL_PARTITION_BY_COUNTS_LIST_END_EXT         0x0
+#define CL_PARTITION_BY_NAMES_LIST_END_EXT          -1
 
 ///////////////////////////////////////////////////////////////////////////////
 // cl_altera_compiler_mode
@@ -523,9 +566,11 @@ cl_int CL_API_CALL clGetKernelSubGroupInfoKHR(
 #define CL_DEVICE_SCHEDULING_KERNEL_BATCHING_ARM                (1 << 0)
 #define CL_DEVICE_SCHEDULING_WORKGROUP_BATCH_SIZE_ARM           (1 << 1)
 #define CL_DEVICE_SCHEDULING_WORKGROUP_BATCH_SIZE_MODIFIER_ARM  (1 << 2)
+#define CL_DEVICE_SCHEDULING_DEFERRED_FLUSH_ARM                 (1 << 3)
 #define CL_KERNEL_EXEC_INFO_WORKGROUP_BATCH_SIZE_ARM            0x41E5
 #define CL_KERNEL_EXEC_INFO_WORKGROUP_BATCH_SIZE_MODIFIER_ARM   0x41E6
 #define CL_QUEUE_KERNEL_BATCHING_ARM                            0x41E7
+#define CL_QUEUE_DEFERRED_FLUSH_ARM                             0x41EC
 
 ///////////////////////////////////////////////////////////////////////////////
 // cl_intel_accelerator
@@ -578,6 +623,40 @@ cl_int CL_API_CALL clReleaseAcceleratorINTEL(
 
 #define CL_ME_VERSION_LEGACY_INTEL                      0x0
 #define CL_ME_VERSION_ADVANCED_VER_1_INTEL              0x1
+
+///////////////////////////////////////////////////////////////////////////////
+// cl_intel_command_queue_families
+typedef cl_bitfield         cl_command_queue_capabilities_intel;
+
+#define CL_QUEUE_FAMILY_MAX_NAME_SIZE_INTEL                 64
+typedef struct _cl_queue_family_properties_intel {
+    cl_command_queue_properties properties;
+    cl_command_queue_capabilities_intel capabilities;
+    cl_uint count;
+    char name[CL_QUEUE_FAMILY_MAX_NAME_SIZE_INTEL];
+} cl_queue_family_properties_intel;
+
+#define CL_DEVICE_QUEUE_FAMILY_PROPERTIES_INTEL             0x418B
+#define CL_QUEUE_FAMILY_INTEL                               0x418C
+#define CL_QUEUE_INDEX_INTEL                                0x418D
+
+#define CL_QUEUE_DEFAULT_CAPABILITIES_INTEL                 0
+#define CL_QUEUE_CAPABILITY_CREATE_SINGLE_QUEUE_EVENTS_INTEL (1 << 0)
+#define CL_QUEUE_CAPABILITY_CREATE_CROSS_QUEUE_EVENTS_INTEL (1 << 1)
+#define CL_QUEUE_CAPABILITY_SINGLE_QUEUE_EVENT_WAIT_LIST_INTEL (1 << 2)
+#define CL_QUEUE_CAPABILITY_CROSS_QUEUE_EVENT_WAIT_LIST_INTEL (1 << 3)
+#define CL_QUEUE_CAPABILITY_TRANSFER_BUFFER_INTEL           (1 << 8)
+#define CL_QUEUE_CAPABILITY_TRANSFER_BUFFER_RECT_INTEL      (1 << 9)
+#define CL_QUEUE_CAPABILITY_MAP_BUFFER_INTEL                (1 << 10)
+#define CL_QUEUE_CAPABILITY_FILL_BUFFER_INTEL               (1 << 11)
+#define CL_QUEUE_CAPABILITY_TRANSFER_IMAGE_INTEL            (1 << 12)
+#define CL_QUEUE_CAPABILITY_MAP_IMAGE_INTEL                 (1 << 13)
+#define CL_QUEUE_CAPABILITY_FILL_IMAGE_INTEL                (1 << 14)
+#define CL_QUEUE_CAPABILITY_TRANSFER_BUFFER_IMAGE_INTEL     (1 << 15)
+#define CL_QUEUE_CAPABILITY_TRANSFER_IMAGE_BUFFER_INTEL     (1 << 16)
+#define CL_QUEUE_CAPABILITY_MARKER_INTEL                    (1 << 24)
+#define CL_QUEUE_CAPABILITY_BARRIER_INTEL                   (1 << 25)
+#define CL_QUEUE_CAPABILITY_KERNEL_INTEL                    (1 << 26)
 
 ///////////////////////////////////////////////////////////////////////////////
 // cl_intel_driver_diagnostics
@@ -664,6 +743,11 @@ cl_int CL_API_CALL clEnqueueReleaseDX9ObjectsINTEL(
 // cl_intel_egl_image_yuv
 
 #define CL_EGL_YUV_PLANE_INTEL                      0x4107
+
+///////////////////////////////////////////////////////////////////////////////
+// cl_intel_mem_channel_property
+
+#define CL_MEM_CHANNEL_INTEL                        0x4213
 
 ///////////////////////////////////////////////////////////////////////////////
 // cl_intel_mem_force_host_memory
@@ -1018,6 +1102,7 @@ clCreateBufferNV(
 #define CL_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT_NV   0x4007
 #define CL_DEVICE_PCI_BUS_ID_NV                     0x4008
 #define CL_DEVICE_PCI_SLOT_ID_NV                    0x4009
+#define CL_DEVICE_PCI_DOMAIN_ID_NV                  0x400A
 
 ///////////////////////////////////////////////////////////////////////////////
 // cl_qcom_ext_host_ptr

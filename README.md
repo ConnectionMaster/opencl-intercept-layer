@@ -1,5 +1,5 @@
 # Intercept Layer for OpenCL<sup>TM</sup> Applications
-Linux and OSX: [![Linux OSX Build Status](https://travis-ci.com/intel/opencl-intercept-layer.svg?branch=master)](https://travis-ci.com/intel/opencl-intercept-layer) | Windows: [![Windows Build Status](https://ci.appveyor.com/api/projects/status/29j347xa9f8e4qc3/branch/master?svg=true)](https://ci.appveyor.com/project/webmasterintel/opencl-intercept-layer/branch/master)
+Linux and OSX: [![Linux OSX Build Status](https://travis-ci.com/intel/opencl-intercept-layer.svg?branch=master)](https://travis-ci.com/intel/opencl-intercept-layer) | Windows: [![Windows Build Status](https://ci.appveyor.com/api/projects/status/29j347xa9f8e4qc3/branch/master?svg=true)](https://ci.appveyor.com/project/webmasterintel/opencl-intercept-layer/branch/master) | GitHub Actions: [![GitHub Actions Build Status](https://github.com/intel/opencl-intercept-layer/workflows/build/badge.svg?branch=master)](https://github.com/intel/opencl-intercept-layer/actions?query=workflow%3Abuild+branch%3Amaster)
 
 
 
@@ -44,6 +44,10 @@ Detailed instructions:
 * [How to Collect MDAPI Performance Metrics](docs/mdapi.md)
 * [How to Use the Intercept Layer for OpenCL Applications with VTune](docs/vtune_logging.md)
 * [How to Use the Intercept Layer for OpenCL Applications with Chrome](docs/chrome_tracing.md)
+
+## Tutorial
+
+A tutorial demonstrating common usages of the Intercept Layer for OpenCL Applications can be found [here](https://github.com/bashbaug/SimpleOpenCLSamples/tree/master/tutorials/interceptlayer).
 
 ## License
 
@@ -90,7 +94,7 @@ OpenCL and the OpenCL logo are trademarks of Apple Inc. used by permission by Kh
 
 \* Other names and brands may be claimed as the property of others.
 
-Copyright (c) 2018-2020, Intel(R) Corporation
+Copyright (c) 2018-2021, Intel(R) Corporation
 
 [khronos_cl_license]: https://github.com/KhronosGroup/OpenCL-Headers/blob/master/LICENSE
 [boost_license]: http://www.boost.org/LICENSE_1_0.txt

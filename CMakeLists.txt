@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2020 Intel Corporation
+# Copyright (c) 2018-2021 Intel Corporation
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -113,7 +113,7 @@ if(UNIX)
     # TODO: Figure out how to get this from a git tag.
     set(CPACK_PACKAGE_VERSION_MAJOR 3)
     set(CPACK_PACKAGE_VERSION_MINOR 0)
-    set(CPACK_PACKAGE_VERSION_PATCH 0)
+    set(CPACK_PACKAGE_VERSION_PATCH 2)
     set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
 
     set(CPACK_PACKAGE_INSTALL_DIRECTORY ${CLINTERCEPT_INSTALL_TIME_ROOT_DIR})

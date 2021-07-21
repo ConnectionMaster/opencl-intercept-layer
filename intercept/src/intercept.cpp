@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2018-2020 Intel Corporation
+// Copyright (c) 2018-2021 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -127,7 +127,7 @@ CLIntercept::CLIntercept( void* pGlobalData )
 
     m_LoggedCLInfo = false;
 
-    m_EnqueueCounter = 1;
+    m_EnqueueCounter = 0;
 
     m_EventsChromeTraced = 0;
     m_ProgramNumber = 0;
@@ -766,11 +766,7 @@ void CLIntercept::writeReport(
         os << "*** WARNING *** NullEnqueue Enabled!" << std::endl << std::endl;
     }
 
-    uint64_t    numEnqueues = m_EnqueueCounter - 1;
-    if( numEnqueues > 0 )
-    {
-        os << "Total Enqueues: " << numEnqueues << std::endl << std::endl;
-    }
+    os << "Total Enqueues: " << m_EnqueueCounter << std::endl << std::endl;
 
     if( config().LeakChecking )
     {
@@ -992,6 +988,7 @@ void CLIntercept::getCallLoggingPrefix(
 //
 void CLIntercept::callLoggingEnter(
     const std::string& functionName,
+    const uint64_t enqueueCounter,
     const cl_kernel kernel )
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
@@ -1013,7 +1010,7 @@ void CLIntercept::callLoggingEnter(
     {
         std::ostringstream  ss;
         ss << "; EnqueueCounter: ";
-        ss << m_EnqueueCounter;
+        ss << enqueueCounter;
         str += ss.str();
     }
 
@@ -1021,6 +1018,7 @@ void CLIntercept::callLoggingEnter(
 }
 void CLIntercept::callLoggingEnter(
     const std::string& functionName,
+    const uint64_t enqueueCounter,
     const cl_kernel kernel,
     const char* formatStr,
     ... )
@@ -1050,7 +1048,7 @@ void CLIntercept::callLoggingEnter(
     {
         str += ": too long";
     }
-    callLoggingEnter( str, NULL );
+    callLoggingEnter( str, enqueueCounter, NULL );
 
     va_end( args );
 }
@@ -1774,6 +1772,117 @@ void CLIntercept::getDeviceInfoString(
 
 ///////////////////////////////////////////////////////////////////////////////
 //
+void CLIntercept::getDevicePartitionPropertiesString(
+    const cl_device_partition_property* properties,
+    std::string& str ) const
+{
+    str = "";
+
+    if( properties )
+    {
+        char    s[256];
+
+        while( properties[0] != 0 )
+        {
+            cl_int  property = (cl_int)properties[0];
+            str += enumName().name( property ) + " = ";
+
+            switch( property )
+            {
+            case CL_DEVICE_PARTITION_EQUALLY:
+            case CL_DEVICE_PARTITION_EQUALLY_EXT:
+                {
+                    auto pu = (const cl_uint*)( properties + 1 );
+                    CLI_SPRINTF( s, 256, "%u", pu[0] );
+                    str += s;
+
+                    properties += 2;
+                }
+                break;
+            case CL_DEVICE_PARTITION_BY_COUNTS:
+            case CL_DEVICE_PARTITION_BY_COUNTS_EXT:
+                {
+                    ++properties;
+                    str += "{ ";
+                    do
+                    {
+                        if( *properties == CL_DEVICE_PARTITION_BY_COUNTS_LIST_END )
+                        {
+                            str += "CL_DEVICE_PARTITION_BY_COUNTS_LIST_END";
+                        }
+                        else
+                        {
+                            auto pu = (const cl_uint*)properties;
+                            CLI_SPRINTF( s, 256, "%u, ", pu[0] );
+                            str += s;
+                        }
+                    }
+                    while( *properties++ != CL_DEVICE_PARTITION_BY_COUNTS_LIST_END );
+                    str += " }";
+                }
+                break;
+            case CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN:
+                {
+                    auto pd = (const cl_device_affinity_domain*)( properties + 1 );
+                    str += enumName().name_device_affinity_domain(pd[0]);
+
+                    properties += 2;
+                }
+                break;
+            case CL_DEVICE_PARTITION_BY_NAMES_EXT:
+                {
+                    ++properties;
+                    str += "{ ";
+                    do
+                    {
+                        if( *properties == CL_PARTITION_BY_NAMES_LIST_END_EXT )
+                        {
+                            str += "CL_PARTITION_BY_NAMES_LIST_END_EXT";
+                        }
+                        else
+                        {
+                            auto pu = (const cl_uint*)properties;
+                            CLI_SPRINTF( s, 256, "%u, ", pu[0] );
+                            str += s;
+                        }
+                    }
+                    while( *properties++ != CL_PARTITION_BY_NAMES_LIST_END_EXT );
+                    str += " }";
+                }
+                break;
+            case CL_DEVICE_PARTITION_BY_AFFINITY_DOMAIN_EXT:
+                // The extension uses different enums than the OpenCL 1.2
+                // feature, and we don't have an enum map for them (yet).
+                {
+                    CLI_SPRINTF( s, 256, "%04X", (cl_uint)properties[1] );
+                    str += s;
+
+                    properties += 2;
+                }
+                break;
+            default:
+                {
+                    CLI_SPRINTF( s, 256, "<Unknown %08X!>", (cl_uint)property );
+                    str += s;
+                    // Advance by two properties.  This may not be correct,
+                    // but it's the best we can do when the property is
+                    // unknown.
+                    properties += 2;
+                }
+                break;
+            }
+
+            if( properties[0] != 0 )
+            {
+                str += ", ";
+            }
+        }
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+//
 void CLIntercept::getEventListString(
     cl_uint numEvents,
     const cl_event* eventList,
@@ -2113,45 +2222,45 @@ void CLIntercept::getKernelArgString(
             arg_value,
             str ) )
     {
-        CLI_SPRINTF( s, 256, "index = %d, size = %d, value = %s\n",
+        CLI_SPRINTF( s, 256, "index = %u, size = %zu, value = %s\n",
             arg_index,
-            (unsigned int)arg_size,
+            arg_size,
             str.c_str() );
     }
     else if( ( arg_value != NULL ) &&
              ( arg_size == sizeof(cl_mem) ) )
     {
         cl_mem* pMem = (cl_mem*)arg_value;
-        CLI_SPRINTF( s, 256, "index = %d, size = %d, value = %p",
+        CLI_SPRINTF( s, 256, "index = %u, size = %zu, value = %p",
             arg_index,
-            (unsigned int)arg_size,
+            arg_size,
             pMem[0] );
     }
     else if( ( arg_value != NULL ) &&
              ( arg_size == sizeof(cl_uint) ) )
     {
         cl_uint*    pData = (cl_uint*)arg_value;
-        CLI_SPRINTF( s, 256, "index = %d, size = %d, value = 0x%x",
+        CLI_SPRINTF( s, 256, "index = %u, size = %zu, value = 0x%x",
             arg_index,
-            (unsigned int)arg_size,
+            arg_size,
             pData[0] );
     }
     else if( ( arg_value != NULL ) &&
              ( arg_size == sizeof(cl_ulong) ) )
     {
         cl_ulong*   pData = (cl_ulong*)arg_value;
-        CLI_SPRINTF( s, 256, "index = %d, size = %d, value = 0x%jx",
+        CLI_SPRINTF( s, 256, "index = %u, size = %zu, value = 0x%jx",
             arg_index,
-            (unsigned int)arg_size,
+            arg_size,
             pData[0] );
     }
     else if( ( arg_value != NULL ) &&
              ( arg_size == sizeof(cl_int4) ) )
     {
         cl_int4*   pData = (cl_int4*)arg_value;
-        CLI_SPRINTF( s, 256, "index = %d, size = %d, valueX = 0x%0x, valueY = 0x%0x, valueZ = 0x%0x, valueW = 0x%0x",
+        CLI_SPRINTF( s, 256, "index = %u, size = %zu, valueX = 0x%0x, valueY = 0x%0x, valueZ = 0x%0x, valueW = 0x%0x",
             arg_index,
-            (unsigned int)arg_size,
+            arg_size,
             pData->s[0],
             pData->s[1],
             pData->s[2],
@@ -2159,9 +2268,9 @@ void CLIntercept::getKernelArgString(
     }
     else
     {
-        CLI_SPRINTF( s, 256, "index = %d, size = %d",
+        CLI_SPRINTF( s, 256, "index = %u, size = %zu",
             arg_index,
-            (unsigned int)arg_size );
+            arg_size );
     }
 
     str = s;
@@ -2464,8 +2573,7 @@ void CLIntercept::logBuild(
 
                     char    str[256] = "";
 
-                    CLI_SPRINTF( str, 256, "Build Status for device %u = ",
-                        (unsigned int)i );
+                    CLI_SPRINTF( str, 256, "Build Status for device %u = ", i );
 
                     std::string message = str;
 
@@ -2699,11 +2807,11 @@ void CLIntercept::logKernelInfo(
                     if( config().KernelInfoLogging ||
                         config().PreferredWorkGroupSizeMultipleLogging )
                     {
-                        logf( "        Preferred Work Group Size Multiple: %u\n", (cl_uint)pwgsm);
+                        logf( "        Preferred Work Group Size Multiple: %zu\n", pwgsm);
                     }
                     if( config().KernelInfoLogging )
                     {
-                        logf( "        Work Group Size: %u\n", (cl_uint)wgs);
+                        logf( "        Work Group Size: %zu\n", wgs);
                         logf( "        Private Mem Size: %u\n", (cl_uint)pms);
                         logf( "        Local Mem Size: %u\n", (cl_uint)lms);
                         if( errorCode_sms == CL_SUCCESS )
@@ -2727,6 +2835,63 @@ void CLIntercept::logKernelInfo(
 
         delete [] deviceList;
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+void CLIntercept::logQueueInfo(
+    const cl_device_id device,
+    const cl_command_queue queue )
+{
+    std::lock_guard<std::mutex> lock(m_Mutex);
+
+    cl_int  errorCode = CL_SUCCESS;
+
+    logf( "Queue Info for %p:\n", queue );
+
+    char*   deviceName = NULL;
+    errorCode |= allocateAndGetDeviceInfoString(
+        device,
+        CL_DEVICE_NAME,
+        deviceName );
+    cl_command_queue_properties props = 0;
+    errorCode |= dispatch().clGetCommandQueueInfo(
+        queue,
+        CL_QUEUE_PROPERTIES,
+        sizeof(props),
+        &props,
+        NULL );
+    if( errorCode == CL_SUCCESS )
+    {
+        logf( "    For device: %s\n", deviceName );
+        logf( "    Queue properties: %s\n",
+            props == 0 ?
+            "(None)" :
+            enumName().name_command_queue_properties(props).c_str() );
+    }
+
+    // Queue family information, may not be supported for all devices.
+    cl_uint queueFamily = 0;
+    cl_int errorCode_qf = dispatch().clGetCommandQueueInfo(
+        queue,
+        CL_QUEUE_FAMILY_INTEL,
+        sizeof(queueFamily),
+        &queueFamily,
+        NULL );
+    cl_uint queueIndex = 0;
+    errorCode_qf |= dispatch().clGetCommandQueueInfo(
+        queue,
+        CL_QUEUE_INDEX_INTEL,
+        sizeof(queueIndex),
+        &queueIndex,
+        NULL );
+    if( errorCode_qf == CL_SUCCESS )
+    {
+        logf( "    Queue family: %u\n", queueFamily );
+        logf( "    Queue index: %u\n", queueIndex );
+    }
+
+    delete [] deviceName;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2933,9 +3098,9 @@ void CLIntercept::contextCallback(
     size_t cb )
 {
     char    str[256] = "";
-    CLI_SPRINTF( str, 256, "=======> Context Callback (private_info = %p, cb = %u):\n",
+    CLI_SPRINTF( str, 256, "=======> Context Callback (private_info = %p, cb = %zu):\n",
         private_info,
-        (unsigned int)cb );
+        cb );
 
     std::lock_guard<std::mutex> lock(m_Mutex);
     log( str + errinfo + "\n" + "<======= End of Context Callback\n" );
@@ -3079,10 +3244,13 @@ void CLIntercept::eventCallbackCaller(
 
     CLIntercept*    pIntercept = pEventCallbackInfo->pIntercept;
 
+    GET_ENQUEUE_COUNTER();
     CALL_LOGGING_ENTER( "event = %p, status = %s (%d)",
         event,
         pIntercept->enumName().name_command_exec_status( status ).c_str(),
         status );
+
+    clock::time_point   cpuStart = clock::now();
 
     pIntercept->eventCallback(
         event,
@@ -3094,6 +3262,8 @@ void CLIntercept::eventCallbackCaller(
             status,
             pEventCallbackInfo->pUserData );
     }
+
+    clock::time_point   cpuEnd = clock::now();
 
     CALL_LOGGING_EXIT( CL_SUCCESS );
 
@@ -3108,14 +3278,6 @@ void CLIntercept::eventCallback(
 {
     // TODO: Since we call log the eventCallbackCaller, do we need to do
     //       anything here?
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
-void CLIntercept::incrementEnqueueCounter()
-{
-    std::lock_guard<std::mutex> lock(m_Mutex);
-    m_EnqueueCounter++;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3139,9 +3301,9 @@ void CLIntercept::overrideNullLocalWorkSize(
                 else
                 {
                     std::lock_guard<std::mutex> lock(m_Mutex);
-                    logf( "Couldn't override NULL local work size: < %u > %% < %u > != 0!\n",
-                        (unsigned int)global_work_size[0],
-                        (unsigned int)m_Config.NullLocalWorkSizeX );
+                    logf( "Couldn't override NULL local work size: < %zu > %% < %zu > != 0!\n",
+                        global_work_size[0],
+                        m_Config.NullLocalWorkSizeX );
                 }
             }
             break;
@@ -3157,11 +3319,11 @@ void CLIntercept::overrideNullLocalWorkSize(
                 else
                 {
                     std::lock_guard<std::mutex> lock(m_Mutex);
-                    logf( "Couldn't override NULL local work size: < %u x %u > %% < %u x %u > != 0!\n",
-                        (unsigned int)global_work_size[0],
-                        (unsigned int)global_work_size[1],
-                        (unsigned int)m_Config.NullLocalWorkSizeX,
-                        (unsigned int)m_Config.NullLocalWorkSizeY );
+                    logf( "Couldn't override NULL local work size: < %zu x %zu > %% < %zu x %zu > != 0!\n",
+                        global_work_size[0],
+                        global_work_size[1],
+                        m_Config.NullLocalWorkSizeX,
+                        m_Config.NullLocalWorkSizeY );
                 }
             }
             break;
@@ -3179,13 +3341,13 @@ void CLIntercept::overrideNullLocalWorkSize(
                 else
                 {
                     std::lock_guard<std::mutex> lock(m_Mutex);
-                    logf( "Couldn't override NULL local work size: < %u x %u x %u > %% < %u x %u x %u > != 0!\n",
-                        (unsigned int)global_work_size[0],
-                        (unsigned int)global_work_size[1],
-                        (unsigned int)global_work_size[2],
-                        (unsigned int)m_Config.NullLocalWorkSizeX,
-                        (unsigned int)m_Config.NullLocalWorkSizeY,
-                        (unsigned int)m_Config.NullLocalWorkSizeZ );
+                    logf( "Couldn't override NULL local work size: < %zu x %zu x %zu > %% < %zu x %zu x %zu > != 0!\n",
+                        global_work_size[0],
+                        global_work_size[1],
+                        global_work_size[2],
+                        m_Config.NullLocalWorkSizeX,
+                        m_Config.NullLocalWorkSizeY,
+                        m_Config.NullLocalWorkSizeZ );
                 }
             }
             break;
@@ -3709,7 +3871,8 @@ bool CLIntercept::injectProgramSPIRV(
 //
 bool CLIntercept::injectProgramOptions(
     const cl_program program,
-    const char*& options,
+    cl_bool isCompile,
+    cl_bool isLink,
     char*& newOptions )
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
@@ -3750,27 +3913,32 @@ bool CLIntercept::injectProgramOptions(
         CLI_SPRINTF( numberString3, 256, "%08X",
             (unsigned int)programInfo.ProgramHash );
 
+        const std::string suffix =
+            isCompile ? "_compile_options.txt" :
+            isLink ? "_link_options.txt" :
+            "_options.txt";
+
         std::string fileName1;
         fileName1 = fileName;
         fileName1 += "/CLI_";
         fileName1 += numberString1;
-        fileName1 += "_options.txt";
+        fileName1 += suffix;
 
         std::string fileName2;
         fileName2 = fileName;
         fileName2 += "/CLI_";
         fileName2 += numberString2;
-        fileName2 += "_options.txt";
+        fileName2 += suffix;
 
         std::string fileName3;
         fileName3 = fileName;
         fileName3 += "/CLI_";
         fileName3 += numberString3;
-        fileName3 += "_options.txt";
+        fileName3 += suffix;
 
         std::string fileName4;
         fileName4 = fileName;
-        fileName4 += "/CLI_options.txt";
+        fileName4 += suffix;
 
         std::ifstream is;
 
@@ -3853,8 +4021,6 @@ bool CLIntercept::injectProgramOptions(
                     }
                 }
 
-                options = newOptions;
-
                 injected = true;
             }
 
@@ -3868,62 +4034,36 @@ bool CLIntercept::injectProgramOptions(
 ///////////////////////////////////////////////////////////////////////////////
 //
 bool CLIntercept::appendBuildOptions(
-    const char*& options,
-    char*& newOptions )
+    const char* append,
+    const char* options,
+    char*& newOptions ) const
 {
-    std::lock_guard<std::mutex> lock(m_Mutex);
-
     bool    modified = false;
 
-    if( options == NULL )
-    {
-        // If the options string does not exist, we can simply point it at the
-        // options we'd like to "append" to it.  We don't need to allocate any
-        // new memory in this case.  We also expect that we haven't allocated
-        // any new options in this case, because if we did, we would have
-        // pointed the options string to the new options.
+    size_t  newSize = strlen(append) + 1;    // for the null terminator
 
-        CLI_ASSERT( newOptions == NULL );
-        options = config().AppendBuildOptions.c_str();
+    const char* oldOptions = newOptions ? newOptions : options;
+    if( oldOptions )
+    {
+        newSize += strlen(oldOptions) + 1;  // for a space
+    }
+
+    char* newNewOptions = new char[ newSize ];
+    if( newNewOptions )
+    {
+        memset( newNewOptions, 0, newSize );
+
+        if( oldOptions )
+        {
+            CLI_STRCAT( newNewOptions, newSize, oldOptions );
+            CLI_STRCAT( newNewOptions, newSize, " " );
+        }
+        CLI_STRCAT( newNewOptions, newSize, append );
+
+        delete [] newOptions;
+        newOptions = newNewOptions;
 
         modified = true;
-    }
-    else
-    {
-        // If the options string does exist, we have two possibilities:
-        // Either we've already modified the options so we've already
-        // allocated new options, or we're still working on the application
-        // provided options.
-
-        size_t  newSize =
-            strlen(options)
-            + 1     // for a space
-            + config().AppendBuildOptions.length()
-            + 1;    // for the null terminator
-
-        char* newNewOptions = new char[ newSize ];
-        if( newNewOptions )
-        {
-            memset( newNewOptions, 0, newSize );
-
-            CLI_STRCAT( newNewOptions, newSize, options );
-            CLI_STRCAT( newNewOptions, newSize, " " );
-            CLI_STRCAT( newNewOptions, newSize, config().AppendBuildOptions.c_str() );
-
-            // If we have already allocated new options, we can free them
-            // now.
-            if( newOptions )
-            {
-                delete [] newOptions;
-                newOptions = NULL;
-            }
-
-            // Either way, the new new options are now the new options.
-            newOptions = newNewOptions;
-            options = newOptions;
-
-            modified = true;
-        }
     }
 
     return modified;
@@ -4201,7 +4341,7 @@ void CLIntercept::dumpInputProgramBinaries(
         }
         if( deviceType & CL_DEVICE_TYPE_ACCELERATOR )
         {
-            outputFileName += "_ACCELERATOR";
+            outputFileName += "_ACC";
         }
         if( deviceType & CL_DEVICE_TYPE_CUSTOM )
         {
@@ -4450,6 +4590,8 @@ void CLIntercept::dumpProgramOptionsScript(
 //
 void CLIntercept::dumpProgramOptions(
     const cl_program program,
+    cl_bool isCompile,
+    cl_bool isLink,
     const char* options )
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
@@ -4495,9 +4637,12 @@ void CLIntercept::dumpProgramOptions(
             fileName += "/CLI_";
             fileName += numberString;
         }
-        // Dump the program source to a .txt file.
+        // Dump the program options to a .txt file.
         {
-            fileName += "_options.txt";
+            fileName +=
+                isCompile ? "_compile_options.txt" :
+                isLink ? "_link_options.txt" :
+                "_options.txt";
             std::ofstream os;
             os.open(
                 fileName.c_str(),
@@ -4593,7 +4738,7 @@ void CLIntercept::dumpProgramBuildLog(
     }
     if( deviceType & CL_DEVICE_TYPE_ACCELERATOR )
     {
-        fileName += "_ACCELERATOR";
+        fileName += "_ACC";
     }
     if( deviceType & CL_DEVICE_TYPE_CUSTOM )
     {
@@ -4685,7 +4830,75 @@ void CLIntercept::modifyCommandQueueProperties(
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-void CLIntercept::createCommandQueueOverrideInit(
+void CLIntercept::createCommandQueueProperties(
+    cl_device_id device,
+    cl_command_queue_properties props,
+    cl_queue_properties*& pLocalQueueProperties ) const
+{
+    bool    addCommandQueuePropertiesEnum = true;
+    bool    addPriorityHintEnum =
+                config().DefaultQueuePriorityHint != 0 &&
+                checkDeviceForExtension( device, "cl_khr_priority_hints" );
+    bool    addThrottleHintEnum =
+                config().DefaultQueueThrottleHint != 0 &&
+                checkDeviceForExtension( device, "cl_khr_throttle_hints" );
+
+    int numProperties = 0;
+    if( addCommandQueuePropertiesEnum )
+    {
+        numProperties += 2;
+    }
+    if( addThrottleHintEnum )
+    {
+        numProperties += 2;
+    }
+    if( addThrottleHintEnum )
+    {
+        numProperties += 2;
+    }
+
+    // Allocate a new array of properties.  We need to allocate two
+    // properties for each pair, plus one property for the terminating
+    // zero.
+    pLocalQueueProperties = new cl_queue_properties[ numProperties + 1 ];
+    if( pLocalQueueProperties )
+    {
+        numProperties = 0;
+
+        if( addPriorityHintEnum )
+        {
+            CLI_ASSERT( config().DefaultQueuePriorityHint != 0 );
+            pLocalQueueProperties[ numProperties] = CL_QUEUE_PRIORITY_KHR;
+            pLocalQueueProperties[ numProperties + 1 ] = config().DefaultQueuePriorityHint;
+            numProperties += 2;
+        }
+        if( config().DefaultQueueThrottleHint != 0 )
+        {
+            CLI_ASSERT( config().DefaultQueueThrottleHint != 0 );
+            pLocalQueueProperties[ numProperties] = CL_QUEUE_THROTTLE_KHR;
+            pLocalQueueProperties[ numProperties + 1 ] = config().DefaultQueueThrottleHint;
+            numProperties += 2;
+        }
+
+        // This setting is added last in the list, in order to better behave with runtimes
+        // truncating it when a property has a value of 0, which may be the case below.
+        if( addCommandQueuePropertiesEnum )
+        {
+            modifyCommandQueueProperties(props);
+
+            pLocalQueueProperties[numProperties] = CL_QUEUE_PROPERTIES;
+            pLocalQueueProperties[numProperties + 1] = props;
+            numProperties += 2;
+        }
+
+        // Add the terminating zero.
+        pLocalQueueProperties[ numProperties ] = 0;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+void CLIntercept::createCommandQueuePropertiesOverride(
     cl_device_id device,
     const cl_queue_properties* properties,
     cl_queue_properties*& pLocalQueueProperties ) const
@@ -4785,96 +4998,18 @@ void CLIntercept::createCommandQueueOverrideInit(
             pLocalQueueProperties[ numProperties + 1 ] = config().DefaultQueueThrottleHint;
             numProperties += 2;
         }
-        // this setting is added last in the list, in order to better behave with runtimes
+
+        // This setting is added last in the list, in order to better behave with runtimes
         // truncating it when a property has a value of 0, which may be the case below.
         if( addCommandQueuePropertiesEnum )
         {
-          cl_command_queue_properties props = 0;
+            cl_command_queue_properties props = 0;
 
-          modifyCommandQueueProperties(props);
+            modifyCommandQueueProperties(props);
 
-          pLocalQueueProperties[numProperties] = CL_QUEUE_PROPERTIES;
-          pLocalQueueProperties[numProperties + 1] = props;
-          numProperties += 2;
-        }
-        // Add the terminating zero.
-        pLocalQueueProperties[ numProperties ] = 0;
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
-void CLIntercept::createCommandQueueOverrideCleanup(
-    cl_queue_properties*& pLocalQueueProperties ) const
-{
-    if( pLocalQueueProperties )
-    {
-        delete pLocalQueueProperties;
-        pLocalQueueProperties = NULL;
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
-void CLIntercept::createCommandQueuePropertiesInit(
-    cl_device_id device,
-    cl_command_queue_properties props,
-    cl_queue_properties*& pLocalQueueProperties ) const
-{
-    bool    addCommandQueuePropertiesEnum = true;
-    bool    addPriorityHintEnum =
-                config().DefaultQueuePriorityHint != 0 &&
-                checkDeviceForExtension( device, "cl_khr_priority_hints" );
-    bool    addThrottleHintEnum =
-                config().DefaultQueueThrottleHint != 0 &&
-                checkDeviceForExtension( device, "cl_khr_throttle_hints" );
-
-    int numProperties = 0;
-    if( addCommandQueuePropertiesEnum )
-    {
-        numProperties += 2;
-    }
-    if( addThrottleHintEnum )
-    {
-        numProperties += 2;
-    }
-    if( addThrottleHintEnum )
-    {
-        numProperties += 2;
-    }
-
-    // Allocate a new array of properties.  We need to allocate two
-    // properties for each pair, plus one property for the terminating
-    // zero.
-    pLocalQueueProperties = new cl_queue_properties[ numProperties + 1 ];
-    if( pLocalQueueProperties )
-    {
-        numProperties = 0;
-
-        if( addPriorityHintEnum )
-        {
-            CLI_ASSERT( config().DefaultQueuePriorityHint != 0 );
-            pLocalQueueProperties[ numProperties] = CL_QUEUE_PRIORITY_KHR;
-            pLocalQueueProperties[ numProperties + 1 ] = config().DefaultQueuePriorityHint;
+            pLocalQueueProperties[numProperties] = CL_QUEUE_PROPERTIES;
+            pLocalQueueProperties[numProperties + 1] = props;
             numProperties += 2;
-        }
-        if( config().DefaultQueueThrottleHint != 0 )
-        {
-            CLI_ASSERT( config().DefaultQueueThrottleHint != 0 );
-            pLocalQueueProperties[ numProperties] = CL_QUEUE_THROTTLE_KHR;
-            pLocalQueueProperties[ numProperties + 1 ] = config().DefaultQueueThrottleHint;
-            numProperties += 2;
-        }
-
-        // this setting is added last in the list, in order to better behave with runtimes
-        // truncating it when a property has a value of 0, which may be the case below.
-        if( addCommandQueuePropertiesEnum )
-        {
-          modifyCommandQueueProperties(props);
-
-          pLocalQueueProperties[numProperties] = CL_QUEUE_PROPERTIES;
-          pLocalQueueProperties[numProperties + 1] = props;
-          numProperties += 2;
         }
 
         // Add the terminating zero.
@@ -4884,13 +5019,42 @@ void CLIntercept::createCommandQueuePropertiesInit(
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-void CLIntercept::createCommandQueuePropertiesCleanup(
-    cl_queue_properties*& pLocalQueueProperties ) const
+void CLIntercept::dummyCommandQueue(
+    cl_context context,
+    cl_device_id device )
 {
-    if( pLocalQueueProperties )
+    if( config().DummyOutOfOrderQueue )
     {
-        delete pLocalQueueProperties;
-        pLocalQueueProperties = NULL;
+        cl_command_queue_properties props;
+        dispatch().clGetDeviceInfo(
+            device,
+            CL_DEVICE_QUEUE_ON_HOST_PROPERTIES,
+            sizeof(props),
+            &props,
+            NULL );
+        if( props & CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE )
+        {
+            std::lock_guard<std::mutex> lock(m_Mutex);
+
+            log( "Creating and destroying a dummy out-of-order queue.\n" );
+
+            cl_int  errorCode = CL_SUCCESS;
+            cl_command_queue dummy = dispatch().clCreateCommandQueue(
+                context,
+                device,
+                CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE,
+                &errorCode );
+            if( errorCode == CL_SUCCESS )
+            {
+                dispatch().clReleaseCommandQueue( dummy );
+            }
+            else
+            {
+                logf( "Error creating dummy command queue!  %s (%i)\n",
+                    enumName().name( errorCode ).c_str(),
+                    errorCode );
+            }
+        }
     }
 }
 
@@ -4898,6 +5062,7 @@ void CLIntercept::createCommandQueuePropertiesCleanup(
 //
 void CLIntercept::addTimingEvent(
     const std::string& functionName,
+    const uint64_t enqueueCounter,
     const clock::time_point queuedTime,
     const cl_kernel kernel,
     const cl_uint workDim,
@@ -4928,7 +5093,7 @@ void CLIntercept::addTimingEvent(
     node.Device = device;
     node.QueueNumber = m_QueueNumberMap[ queue ];
     node.FunctionName = functionName;
-    node.EnqueueCounter = m_EnqueueCounter;
+    node.EnqueueCounter = enqueueCounter;
     node.QueuedTime = queuedTime;
     node.Kernel = kernel; // Note: no retain, so cannot count on this value...
     node.Event = event;
@@ -5036,7 +5201,7 @@ void CLIntercept::addTimingEvent(
 
                 if( simd )
                 {
-                    ss << " SIMD" << (unsigned int)simd;
+                    ss << " SIMD" << simd;
                 }
             }
             {
@@ -5050,7 +5215,7 @@ void CLIntercept::addTimingEvent(
                     NULL );
                 if( slm )
                 {
-                    ss << " SLM=" << (unsigned int)slm;
+                    ss << " SLM=" << slm;
                 }
             }
             {
@@ -5064,7 +5229,7 @@ void CLIntercept::addTimingEvent(
                     NULL );
                 if( tpm )
                 {
-                    ss << " TPM=" << (unsigned int)tpm;
+                    ss << " TPM=" << tpm;
                 }
             }
             {
@@ -5078,7 +5243,7 @@ void CLIntercept::addTimingEvent(
                     NULL );
                 if( spill )
                 {
-                    ss << " SPILL=" << (unsigned int)spill;
+                    ss << " SPILL=" << spill;
                 }
             }
             node.KernelName += ss.str();
@@ -5142,6 +5307,9 @@ void CLIntercept::addTimingEvent(
                 config().DevicePerformanceTimeSuggestedLWSTracking )
             {
                 cl_platform_id  platform = getPlatform(device);
+
+                // TODO: Switch to or add support for clGetKernelSuggestedLocalWorkSizeKHR
+                // support is available.
 
                 if( dispatchX(platform).clGetKernelSuggestedLocalWorkSizeINTEL == NULL )
                 {
@@ -5340,6 +5508,7 @@ void CLIntercept::checkTimingEvents()
 
                     chromeTraceEvent(
                         name,
+                        node.EnqueueCounter,
                         node.QueueNumber,
                         node.Event,
                         node.QueuedTime );
@@ -5534,16 +5703,8 @@ void CLIntercept::checkRemoveKernelInfo( cl_kernel kernel )
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
 
-    cl_uint refCount = 0;
-    cl_int  errorCode = CL_SUCCESS;
-
-    errorCode = dispatch().clGetKernelInfo(
-        kernel,
-        CL_KERNEL_REFERENCE_COUNT,
-        sizeof( refCount ),
-        &refCount,
-        NULL );
-    if( errorCode == CL_SUCCESS && refCount == 1 )
+    cl_uint refCount = getRefCount( kernel );
+    if( refCount == 1 )
     {
 #if 0
         // We shouldn't remove the kernel name from the local kernel name map
@@ -5619,16 +5780,8 @@ void CLIntercept::checkRemoveSamplerString(
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
 
-    cl_uint refCount = 0;
-    cl_int  errorCode = CL_SUCCESS;
-
-    errorCode = dispatch().clGetSamplerInfo(
-        sampler,
-        CL_SAMPLER_REFERENCE_COUNT,
-        sizeof( refCount ),
-        &refCount,
-        NULL );
-    if( errorCode == CL_SUCCESS && refCount == 1 )
+    cl_uint refCount = getRefCount( sampler );
+    if( refCount == 1 )
     {
         m_SamplerDataMap.erase( sampler );
     }
@@ -5661,6 +5814,7 @@ bool CLIntercept::checkGetSamplerString(
 ///////////////////////////////////////////////////////////////////////////////
 //
 void CLIntercept::addQueue(
+    cl_context context,
     cl_command_queue queue )
 {
     if( queue )
@@ -5669,6 +5823,8 @@ void CLIntercept::addQueue(
 
         m_QueueNumberMap[ queue ] = m_QueueNumber + 1;  // should be nonzero
         m_QueueNumber++;
+
+        m_ContextQueuesMap[context].push_back(queue);
     }
 }
 
@@ -5679,18 +5835,57 @@ void CLIntercept::checkRemoveQueue(
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
 
-    cl_uint refCount = 0;
-    cl_int  errorCode = CL_SUCCESS;
-
-    errorCode = dispatch().clGetCommandQueueInfo(
-        queue,
-        CL_QUEUE_REFERENCE_COUNT,
-        sizeof( refCount ),
-        &refCount,
-        NULL );
-    if( errorCode == CL_SUCCESS && refCount == 1 )
+    cl_uint refCount = getRefCount( queue );
+    if( refCount == 1 )
     {
         m_QueueNumberMap.erase( queue );
+
+        cl_context  context = NULL;
+
+        cl_int errorCode = dispatch().clGetCommandQueueInfo(
+            queue,
+            CL_QUEUE_CONTEXT,
+            sizeof(context),
+            &context,
+            NULL );
+        if( errorCode == CL_SUCCESS && context )
+        {
+            CQueueList& queues = m_ContextQueuesMap[context];
+
+            queues.erase(
+                std::find(
+                    queues.begin(),
+                    queues.end(),
+                    queue ) );
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+void CLIntercept::addEvent(
+    cl_event event,
+    uint64_t enqueueCounter )
+{
+    if( event )
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+
+        m_EventIdMap[ event ] = enqueueCounter;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+void CLIntercept::checkRemoveEvent(
+    cl_event event )
+{
+    std::lock_guard<std::mutex> lock(m_Mutex);
+
+    cl_uint refCount = getRefCount( event );
+    if( refCount == 1 )
+    {
+        m_EventIdMap.erase( event );
     }
 }
 
@@ -5823,16 +6018,8 @@ void CLIntercept::checkRemoveMemObj(
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
 
-    cl_uint refCount = 0;
-    cl_int  errorCode = CL_SUCCESS;
-
-    errorCode = dispatch().clGetMemObjectInfo(
-        memobj,
-        CL_MEM_REFERENCE_COUNT,
-        sizeof( refCount ),
-        &refCount,
-        NULL );
-    if( errorCode == CL_SUCCESS && refCount == 1 )
+    cl_uint refCount = getRefCount( memobj );
+    if( refCount == 1 )
     {
         m_MemAllocNumberMap.erase( memobj );
         m_BufferInfoMap.erase( memobj );
@@ -5869,6 +6056,33 @@ void CLIntercept::removeSVMAllocation(
 
 ///////////////////////////////////////////////////////////////////////////////
 //
+void CLIntercept::addUSMAllocation(
+    void* usmPtr,
+    size_t size )
+{
+    if( usmPtr )
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+
+        m_MemAllocNumberMap[ usmPtr ] = m_MemAllocNumber;
+        m_USMAllocInfoMap[ usmPtr ] = size;
+        m_MemAllocNumber++;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+void CLIntercept::removeUSMAllocation(
+    void* usmPtr )
+{
+    std::lock_guard<std::mutex> lock(m_Mutex);
+
+    m_MemAllocNumberMap.erase( usmPtr );
+    m_USMAllocInfoMap.erase( usmPtr );
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
 void CLIntercept::setKernelArg(
     cl_kernel kernel,
     cl_uint arg_index,
@@ -5894,37 +6108,49 @@ void CLIntercept::setKernelArgSVMPointer(
 
     // Unlike clSetKernelArg(), which must pass a cl_mem, clSetKernelArgSVMPointer
     // can pass a pointer to the base of a SVM allocation or anywhere inside of
-    // an SVM allocation.  As a result, we may need to search the SVM map to find
-    // the base address and size of the SVM allocation.  Still, try to just lookup
-    // the SVM allocation in the map, just in case the app sets the base address
-    // (this may be the common case?).
+    // an SVM allocation.  As a result, we need to search the SVM map to find the
+    // base address and size of the SVM allocation.
 
     CKernelArgMemMap&   kernelArgMap = m_KernelArgMap[ kernel ];
 
-    if( m_SVMAllocInfoMap.find( arg ) != m_SVMAllocInfoMap.end() )
+    CSVMAllocInfoMap::iterator iter = m_SVMAllocInfoMap.lower_bound( arg );
+    if( iter->first != arg && iter != m_SVMAllocInfoMap.begin() )
     {
-        // Got it, the pointer was the base address of an SVM allocation.
-        kernelArgMap[ arg_index ] = arg;
+        // Go to the previous iterator.
+        --iter;
     }
-    else
-    {
-        intptr_t    iarg = (intptr_t)arg;
-        for( CSVMAllocInfoMap::iterator i = m_SVMAllocInfoMap.begin();
-             i != m_SVMAllocInfoMap.end();
-             ++i )
-        {
-            const void* ptr = (*i).first;
-            size_t      size = (*i).second;
 
-            intptr_t    start = (intptr_t)ptr;
-            intptr_t    end = start + size;
-            if( start <= iarg &&
-                iarg < end )
-            {
-                kernelArgMap[ arg_index ] = ptr;
-                break;
-            }
-        }
+    const void* startPtr = iter->first;
+    const void* endPtr = (const char*)startPtr + iter->second;
+    if( arg >= startPtr && arg < endPtr )
+    {
+        kernelArgMap[ arg_index ] = startPtr;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+void CLIntercept::setKernelArgUSMPointer(
+    cl_kernel kernel,
+    cl_uint arg_index,
+    const void* arg )
+{
+    std::lock_guard<std::mutex> lock(m_Mutex);
+
+    CKernelArgMemMap&   kernelArgMap = m_KernelArgMap[ kernel ];
+
+    CUSMAllocInfoMap::iterator iter = m_USMAllocInfoMap.lower_bound( arg );
+    if( iter->first != arg && iter != m_USMAllocInfoMap.begin() )
+    {
+        // Go to the previous iterator.
+        --iter;
+    }
+
+    const void* startPtr = iter->first;
+    const void* endPtr = (const char*)startPtr + iter->second;
+    if( arg >= startPtr && arg < endPtr )
+    {
+        kernelArgMap[ arg_index ] = startPtr;
     }
 }
 
@@ -5932,11 +6158,15 @@ void CLIntercept::setKernelArgSVMPointer(
 //
 void CLIntercept::dumpBuffersForKernel(
     const std::string& name,
+    const uint64_t enqueueCounter,
     cl_kernel kernel,
     cl_command_queue command_queue )
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
 
+    cl_platform_id  platform = getPlatform(kernel);
+
+    std::vector<char>   transferBuf;
     std::string fileNamePrefix = "";
 
     // Get the dump directory name.
@@ -5961,7 +6191,8 @@ void CLIntercept::dumpBuffersForKernel(
         void*   allocation = (void*)(*i).second;
         cl_mem  memobj = (cl_mem)allocation;
         ++i;
-        if( ( m_SVMAllocInfoMap.find( allocation ) != m_SVMAllocInfoMap.end() ) ||
+        if( ( m_USMAllocInfoMap.find( allocation ) != m_USMAllocInfoMap.end() ) ||
+            ( m_SVMAllocInfoMap.find( allocation ) != m_SVMAllocInfoMap.end() ) ||
             ( m_BufferInfoMap.find( memobj ) != m_BufferInfoMap.end() ) )
         {
             unsigned int        number = m_MemAllocNumberMap[ memobj ];
@@ -5972,7 +6203,7 @@ void CLIntercept::dumpBuffersForKernel(
             // Add the enqueue count to file name
             {
                 CLI_SPRINTF( tmpStr, MAX_PATH, "%04u",
-                    (unsigned int)m_EnqueueCounter );
+                    (unsigned int)enqueueCounter );
 
                 fileName += "Enqueue_";
                 fileName += tmpStr;
@@ -6006,7 +6237,55 @@ void CLIntercept::dumpBuffersForKernel(
             }
 
             // Dump the buffer contents to the file.
-            if( m_SVMAllocInfoMap.find( allocation ) != m_SVMAllocInfoMap.end() )
+            if( m_USMAllocInfoMap.find( allocation ) != m_USMAllocInfoMap.end() )
+            {
+                size_t  size = m_USMAllocInfoMap[ allocation ];
+
+                if( dispatchX(platform).clEnqueueMemcpyINTEL == NULL )
+                {
+                    getExtensionFunctionAddress(
+                        platform,
+                        "clEnqueueMemcpyINTEL" );
+                }
+                if( transferBuf.size() < size )
+                {
+                    transferBuf.resize(size);
+                }
+
+                auto dispatchX = this->dispatchX(platform);
+                if( dispatchX.clEnqueueMemcpyINTEL &&
+                    transferBuf.size() >= size )
+                {
+                    cl_int  error = dispatchX.clEnqueueMemcpyINTEL(
+                        command_queue,
+                        CL_TRUE,
+                        transferBuf.data(),
+                        allocation,
+                        size,
+                        0,
+                        NULL,
+                        NULL );
+                    if( error == CL_SUCCESS )
+                    {
+                        std::ofstream os;
+                        os.open(
+                            fileName.c_str(),
+                            std::ios::out | std::ios::binary );
+
+                        if( os.good() )
+                        {
+                            os.write( transferBuf.data(), size );
+                            os.close();
+                        }
+                        else
+                        {
+                            logf( "Failed to open buffer dump file for writing: %s\n",
+                                fileName.c_str() );
+                        }
+                    }
+                }
+            }
+            else if( m_SVMAllocInfoMap.find( allocation ) != m_SVMAllocInfoMap.end() )
             {
                 size_t  size = m_SVMAllocInfoMap[ allocation ];
 
@@ -6096,6 +6375,7 @@ void CLIntercept::dumpBuffersForKernel(
 //
 void CLIntercept::dumpImagesForKernel(
     const std::string& name,
+    const uint64_t enqueueCounter,
     cl_kernel kernel,
     cl_command_queue command_queue )
 {
@@ -6139,7 +6419,7 @@ void CLIntercept::dumpImagesForKernel(
             // Add the enqueue count to file name
             {
                 CLI_SPRINTF( tmpStr, MAX_PATH, "%04u",
-                    (unsigned int)m_EnqueueCounter );
+                    (unsigned int)enqueueCounter );
 
                 fileName += "Enqueue_";
                 fileName += tmpStr;
@@ -6169,11 +6449,11 @@ void CLIntercept::dumpImagesForKernel(
 
             // Add the image dimensions to the file name
             {
-                CLI_SPRINTF( tmpStr, MAX_PATH, "_%ux%ux%u_%ubpp",
-                    (unsigned int)info.Region[0],
-                    (unsigned int)info.Region[1],
-                    (unsigned int)info.Region[2],
-                    (unsigned int)info.ElementSize * 8 );
+                CLI_SPRINTF( tmpStr, MAX_PATH, "_%zux%zux%zu_%zubpp",
+                    info.Region[0],
+                    info.Region[1],
+                    info.Region[2],
+                    info.ElementSize * 8 );
 
                 fileName += tmpStr;
             }
@@ -6237,6 +6517,7 @@ void CLIntercept::dumpImagesForKernel(
 ///////////////////////////////////////////////////////////////////////////////
 //
 void CLIntercept::dumpArgument(
+    const uint64_t enqueueCounter,
     cl_kernel kernel,
     cl_int arg_index,
     size_t size,
@@ -6264,7 +6545,7 @@ void CLIntercept::dumpArgument(
             char    enqueueCount[ MAX_PATH ];
 
             CLI_SPRINTF( enqueueCount, MAX_PATH, "%04u",
-                (unsigned int)m_EnqueueCounter );
+                (unsigned int)enqueueCounter );
             fileName += "SetKernelArg_";
             fileName += enqueueCount;
         }
@@ -6318,6 +6599,7 @@ void CLIntercept::dumpArgument(
 //
 void CLIntercept::dumpBuffer(
     const std::string& name,
+    const uint64_t enqueueCounter,
     cl_mem memobj,
     cl_command_queue command_queue,
     void* ptr,
@@ -6359,8 +6641,8 @@ void CLIntercept::dumpBuffer(
         {
             char    offsetName[ MAX_PATH ];
 
-            CLI_SPRINTF( offsetName, MAX_PATH, "%04u",
-                (unsigned int)offset );
+            CLI_SPRINTF( offsetName, MAX_PATH, "%04zu",
+                offset );
 
             fileName += "_Offset_";
             fileName += offsetName;
@@ -6371,7 +6653,7 @@ void CLIntercept::dumpBuffer(
             char    enqueueCount[ MAX_PATH ];
 
             CLI_SPRINTF( enqueueCount, MAX_PATH, "%04u",
-                (unsigned int)m_EnqueueCounter );
+                (unsigned int)enqueueCounter );
 
             fileName += "_Enqueue_";
             fileName += enqueueCount;
@@ -6468,7 +6750,7 @@ void CLIntercept::checkEventList(
     if( numEvents != 0 && eventList == NULL )
     {
         std::lock_guard<std::mutex> lock(m_Mutex);
-        logf( "Check Events for %s: Num Events is %d, but Event List is NULL!\n",
+        logf( "Check Events for %s: Num Events is %u, but Event List is NULL!\n",
             functionName.c_str(),
             numEvents );
     }
@@ -6718,8 +7000,165 @@ void CLIntercept::checkKernelArgUSMPointer(
 
 ///////////////////////////////////////////////////////////////////////////////
 //
+bool CLIntercept::checkRelaxAllocationLimitsSupport(
+    cl_program program ) const
+{
+    cl_int  errorCode = CL_SUCCESS;
+    bool    supported = true;
+
+    cl_uint         numDevices = 0;
+    cl_device_id*   deviceList = NULL;
+    if( errorCode == CL_SUCCESS )
+    {
+        errorCode = allocateAndGetProgramDeviceList(
+            program,
+            numDevices,
+            deviceList );
+    }
+
+    if( errorCode == CL_SUCCESS )
+    {
+        supported = checkRelaxAllocationLimitsSupport(
+            numDevices,
+            deviceList );
+    }
+
+    delete [] deviceList;
+
+    return ( errorCode == CL_SUCCESS ) && supported;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+bool CLIntercept::checkRelaxAllocationLimitsSupport(
+    cl_uint numDevices,
+    const cl_device_id* deviceList ) const
+{
+    cl_int  errorCode = CL_SUCCESS;
+    bool    supported = true;
+
+    // For now, check for Intel GPU devices to determine whether relaxed
+    // allocations are supported.  Eventually this can be checked using
+    // formal mechanisms.
+
+    for( cl_uint i = 0; i < numDevices; i++ )
+    {
+        cl_device_type  deviceType = 0;
+        cl_uint deviceVendorId;
+
+        errorCode |= dispatch().clGetDeviceInfo(
+            deviceList[ i ],
+            CL_DEVICE_TYPE,
+            sizeof( deviceType ),
+            &deviceType,
+            NULL );
+        errorCode |= dispatch().clGetDeviceInfo(
+            deviceList[ i ],
+            CL_DEVICE_VENDOR_ID,
+            sizeof( deviceVendorId ),
+            &deviceVendorId,
+            NULL );
+        if( ( deviceType & CL_DEVICE_TYPE_GPU ) == 0 ||
+            deviceVendorId != 0x8086 )
+        {
+            supported = false;
+            break;
+        }
+    }
+
+    return ( errorCode == CL_SUCCESS ) && supported;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+void CLIntercept::usmAllocPropertiesOverride(
+    const cl_mem_properties_intel* properties,
+    cl_mem_properties_intel*& pLocalAllocProperties ) const
+{
+    const cl_mem_flags CL_MEM_ALLOW_UNRESTRICTED_SIZE_INTEL = (1 << 23);
+
+    bool    addMemFlagsEnum = config().RelaxAllocationLimits != 0;
+
+    int     numProperties = 0;
+    if( properties )
+    {
+        while( properties[ numProperties ] != 0 )
+        {
+            switch( properties[ numProperties ] )
+            {
+            case CL_MEM_FLAGS:
+                addMemFlagsEnum = false;
+                break;
+            default:
+                break;
+            }
+            numProperties += 2;
+        }
+    }
+
+    if( addMemFlagsEnum )
+    {
+        numProperties += 2;
+    }
+
+    // Allocate a new array of properties.  We need to allocate two
+    // properties for each pair, plus one property for the terminating
+    // zero.
+    pLocalAllocProperties = new cl_queue_properties[ numProperties + 1 ];
+    if( pLocalAllocProperties )
+    {
+        // Copy the old properties array to the new properties array,
+        // if the new properties array exists.
+        numProperties = 0;
+        if( properties )
+        {
+            while( properties[ numProperties ] != 0 )
+            {
+                pLocalAllocProperties[ numProperties ] = properties[ numProperties ];
+                if( properties[ numProperties ] == CL_MEM_FLAGS )
+                {
+                    CLI_ASSERT( addMemFlagsEnum == false );
+
+                    cl_mem_properties_intel flags = properties[ numProperties + 1 ];
+                    if( config().RelaxAllocationLimits )
+                    {
+                        flags |= CL_MEM_ALLOW_UNRESTRICTED_SIZE_INTEL;
+                    }
+
+                    pLocalAllocProperties[ numProperties + 1 ] = flags;
+                }
+                else
+                {
+                    pLocalAllocProperties[ numProperties + 1 ] =
+                        properties[ numProperties + 1 ];
+                }
+                numProperties += 2;
+            }
+        }
+        if( addMemFlagsEnum )
+        {
+            pLocalAllocProperties[ numProperties] = CL_MEM_FLAGS;
+
+            cl_mem_properties_intel flags = 0;
+            if( config().RelaxAllocationLimits )
+            {
+                flags |= CL_MEM_ALLOW_UNRESTRICTED_SIZE_INTEL;
+            }
+
+            pLocalAllocProperties[ numProperties + 1 ] = flags;
+            numProperties += 2;
+        }
+
+        // Add the terminating zero.
+        pLocalAllocProperties[ numProperties ] = 0;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
 void CLIntercept::startAubCapture(
     const std::string& functionName,
+    const uint64_t enqueueCounter,
     const cl_kernel kernel,
     const cl_uint workDim,
     const size_t* gws,
@@ -6784,7 +7223,7 @@ void CLIntercept::startAubCapture(
                 {
                     fileName += "_Enqueue_";
 
-                    CLI_SPRINTF( charBuf, MAX_PATH, "%08u", (cl_uint)m_EnqueueCounter );
+                    CLI_SPRINTF( charBuf, MAX_PATH, "%08u", (cl_uint)enqueueCounter );
 
                     fileName += charBuf;
                     fileName += "_";
@@ -7435,7 +7874,7 @@ cl_program CLIntercept::createProgramWithInjectionBinaries(
                 }
                 if( deviceType & CL_DEVICE_TYPE_ACCELERATOR )
                 {
-                    suffix += "_ACCELERATOR";
+                    suffix += "_ACC";
                 }
                 if( deviceType & CL_DEVICE_TYPE_CUSTOM )
                 {
@@ -7520,8 +7959,8 @@ cl_program CLIntercept::createProgramWithInjectionBinaries(
                 }
                 if( errorCode != CL_SUCCESS )
                 {
-                    log( "Injecting binaries failed: clCreateProgramWithBinary() returned %s\n" +
-                        enumName().name( errorCode ) + "\n" );
+                    logf("Injecting binaries failed: clCreateProgramWithBinary() returned %s\n",
+                        enumName().name( errorCode ).c_str() );
                 }
             }
 
@@ -7704,7 +8143,7 @@ void CLIntercept::dumpProgramBinary(
                 }
                 if( deviceType & CL_DEVICE_TYPE_ACCELERATOR )
                 {
-                    outputFileName += "_ACCELERATOR";
+                    outputFileName += "_ACC";
                 }
                 if( deviceType & CL_DEVICE_TYPE_CUSTOM )
                 {
@@ -7900,7 +8339,7 @@ void CLIntercept::dumpKernelISABinaries(
                     }
                     if( deviceType & CL_DEVICE_TYPE_ACCELERATOR )
                     {
-                        fileName += "ACCELERATOR_";
+                        fileName += "ACC_";
                     }
                     if( deviceType & CL_DEVICE_TYPE_CUSTOM )
                     {
@@ -10721,6 +11160,8 @@ void* CLIntercept::getExtensionFunctionAddress(
     CHECK_RETURN_EXTENSION_FUNCTION( clCreateProgramWithILKHR );
     // cl_khr_subgroups
     CHECK_RETURN_EXTENSION_FUNCTION( clGetKernelSubGroupInfoKHR );
+    // cl_khr_suggested_local_work_size
+    CHECK_RETURN_EXTENSION_FUNCTION( clGetKernelSuggestedLocalWorkSizeKHR );
     // cl_khr_create_command_queue
     CHECK_RETURN_EXTENSION_FUNCTION( clCreateCommandQueueWithPropertiesKHR );
 
@@ -11416,7 +11857,7 @@ void CLIntercept::ittRegisterCommandQueue(
         }
         if( deviceType & CL_DEVICE_TYPE_ACCELERATOR )
         {
-            trackName += " ACCELERATOR";
+            trackName += " ACC";
         }
         if( deviceType & CL_DEVICE_TYPE_CUSTOM )
         {
@@ -11459,20 +11900,10 @@ void CLIntercept::ittReleaseCommandQueue(
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
 
-    cl_int  errorCode = CL_SUCCESS;
-    cl_uint refCount = 0;
-
     if( m_ITTQueueInfoMap.find(queue) != m_ITTQueueInfoMap.end() )
     {
-        errorCode = dispatch().clGetCommandQueueInfo(
-            queue,
-            CL_QUEUE_REFERENCE_COUNT,
-            sizeof( refCount ),
-            &refCount,
-            NULL );
-
-        if( ( errorCode == CL_SUCCESS ) &&
-            ( refCount == 1 ) )
+        cl_uint refCount = getRefCount( queue );
+        if( refCount == 1 )
         {
             dispatch().clReleaseCommandQueue( queue );
             m_ITTQueueInfoMap.erase( queue );
@@ -11636,21 +12067,29 @@ void CLIntercept::ittTraceEvent(
 //
 void CLIntercept::chromeCallLoggingExit(
     const std::string& functionName,
+    bool includeId,
+    const uint64_t enqueueCounter,
     const cl_kernel kernel,
     clock::time_point tickStart,
     clock::time_point tickEnd )
 {
     std::lock_guard<std::mutex> lock(m_Mutex);
 
-    std::string str;
-    str += functionName;
+    std::string name;
+    name += functionName;
 
     if( kernel )
     {
         const std::string& kernelName = getShortKernelNameWithHash(kernel);
-        str += "( ";
-        str += kernelName;
-        str += " )";
+        name += "( ";
+        name += kernelName;
+        name += " )";
+    }
+
+    std::ostringstream  args;
+    if( includeId )
+    {
+        args << ", \"args\":{\"id\":" << enqueueCounter << "}";
     }
 
     uint64_t    processId =
@@ -11670,9 +12109,10 @@ void CLIntercept::chromeCallLoggingExit(
     m_InterceptTrace
         << "{\"ph\":\"X\", \"pid\":" << processId
         << ", \"tid\":" << threadId
-        << ", \"name\":\"" << str
+        << ", \"name\":\"" << name
         << "\", \"ts\":" << usStart
         << ", \"dur\":" << usDelta
+        << args.str()
         << "},\n";
 }
 
@@ -11733,7 +12173,7 @@ void CLIntercept::chromeRegisterCommandQueue(
         }
         if( deviceType & CL_DEVICE_TYPE_ACCELERATOR )
         {
-            trackName += "ACCELERATOR";
+            trackName += "ACC";
         }
         if( deviceType & CL_DEVICE_TYPE_CUSTOM )
         {
@@ -11772,6 +12212,7 @@ void CLIntercept::chromeRegisterCommandQueue(
 //
 void CLIntercept::chromeTraceEvent(
     const std::string& name,
+    uint64_t enqueueCounter,
     unsigned int queueNumber,
     cl_event event,
     const clock::time_point queuedTime )
@@ -11859,14 +12300,30 @@ void CLIntercept::chromeTraceEvent(
 
             for( size_t state = 0; state < cNumStates; state++ )
             {
-                m_InterceptTrace
-                    << "{\"name\":\"" << name << " " << suffixes[state]
-                    << "\", \"ph\":\"X\", \"pid\":" << processId
-                    << ", \"tid\":" << m_EventsChromeTraced << "." << queueNumber
-                    << ", \"ts\":" << usStarts[state]
-                    << ", \"dur\":" << usDeltas[state]
-                    << ", \"cname\":\"" << colours[state]
-                    << "\"},\n";
+                if( m_Config.ChromePerformanceTimingPerKernel )
+                {
+                    m_InterceptTrace
+                        << "{\"name\":\"" << name << " " << suffixes[state]
+                        << "\", \"ph\":\"X\", \"pid\":" << processId
+                        << ", \"tid\":\"" << name
+                        << "\", \"ts\":" << usStarts[state]
+                        << ", \"dur\":" << usDeltas[state]
+                        << ", \"cname\":\"" << colours[state]
+                        << "\", \"args\":{\"id\":" << enqueueCounter
+                        << "}},\n";
+                }
+                else
+                {
+                    m_InterceptTrace
+                        << "{\"name\":\"" << name << " " << suffixes[state]
+                        << "\", \"ph\":\"X\", \"pid\":" << processId
+                        << ", \"tid\":" << m_EventsChromeTraced << "." << queueNumber
+                        << ", \"ts\":" << usStarts[state]
+                        << ", \"dur\":" << usDeltas[state]
+                        << ", \"cname\":\"" << colours[state]
+                        << "\", \"args\":{\"id\":" << enqueueCounter
+                        << "}},\n";
+                }
             }
             m_EventsChromeTraced++;
         }
@@ -11875,14 +12332,28 @@ void CLIntercept::chromeTraceEvent(
             const uint64_t  usStart =
                 (commandStart - commandQueued + normalizedQueuedTimeNS) / 1000;
             const uint64_t  usDelta = ( commandEnd - commandStart ) / 1000;
-
-            m_InterceptTrace
-                << "{\"ph\":\"X\", \"pid\":" << processId
-                << ", \"tid\":-" << queueNumber
-                << ", \"name\":\"" << name
-                << "\", \"ts\":" << usStart
-                << ", \"dur\":" << usDelta
-                << "},\n";
+            if( m_Config.ChromePerformanceTimingPerKernel )
+            {
+                m_InterceptTrace
+                    << "{\"ph\":\"X\", \"pid\":" << processId
+                    << ", \"tid\":\"" << name
+                    << "\", \"name\":\"" << name
+                    << "\", \"ts\":" << usStart
+                    << ", \"dur\":" << usDelta
+                    << ", \"args\":{\"id\":" << enqueueCounter
+                    << "}},\n";
+            }
+            else
+            {
+                m_InterceptTrace
+                    << "{\"ph\":\"X\", \"pid\":" << processId
+                    << ", \"tid\":-" << queueNumber
+                    << ", \"name\":\"" << name
+                    << "\", \"ts\":" << usStart
+                    << ", \"dur\":" << usDelta
+                    << ", \"args\":{\"id\":" << enqueueCounter
+                    << "}},\n";
+            }
         }
     }
     else
@@ -12134,6 +12605,8 @@ void* CLIntercept::emulatedHostMemAlloc(
     cl_uint alignment,
     cl_int* errcode_ret)
 {
+    std::lock_guard<std::mutex> lock(m_Mutex);
+
     if( !validateUSMMemProperties(properties) )
     {
         if( errcode_ret )
@@ -12199,6 +12672,8 @@ void* CLIntercept::emulatedDeviceMemAlloc(
     cl_uint alignment,
     cl_int* errcode_ret)
 {
+    std::lock_guard<std::mutex> lock(m_Mutex);
+
     if( !validateUSMMemProperties(properties) )
     {
         if( errcode_ret )
@@ -12253,6 +12728,8 @@ void* CLIntercept::emulatedSharedMemAlloc(
     cl_uint alignment,
     cl_int* errcode_ret)
 {
+    std::lock_guard<std::mutex> lock(m_Mutex);
+
     if( !validateUSMMemProperties(properties) )
     {
         if( errcode_ret )
@@ -12315,6 +12792,8 @@ cl_int CLIntercept::emulatedMemFree(
     cl_context context,
     const void* ptr )
 {
+    std::lock_guard<std::mutex> lock(m_Mutex);
+
     SUSMContextInfo&    usmContextInfo = m_USMContextInfoMap[context];
 
     CUSMAllocMap::iterator iter = usmContextInfo.AllocMap.find( ptr );
@@ -12606,9 +13085,9 @@ cl_int CLIntercept::setUSMKernelExecInfo(
             {
                 size_t  count = usmContextInfo.HostAllocVector.size();
 
-                logf("Indirect USM Allocs for kernel %s: Fast path for %u host allocs\n",
+                logf("Indirect USM Allocs for kernel %s: Fast path for %zu host allocs\n",
                     getShortKernelName(kernel).c_str(),
-                    (cl_uint)count );
+                    count );
 
                 errorCode = dispatch().clSetKernelExecInfo(
                     kernel,
@@ -12620,9 +13099,9 @@ cl_int CLIntercept::setUSMKernelExecInfo(
             {
                 size_t  count = usmContextInfo.DeviceAllocVector.size();
 
-                logf("Indirect USM Allocs for kernel %s: Fast path for %u device allocs\n",
+                logf("Indirect USM Allocs for kernel %s: Fast path for %zu device allocs\n",
                     getShortKernelName(kernel).c_str(),
-                    (cl_uint)count );
+                    count );
 
                 errorCode = dispatch().clSetKernelExecInfo(
                     kernel,
@@ -12634,9 +13113,9 @@ cl_int CLIntercept::setUSMKernelExecInfo(
             {
                 size_t  count = usmContextInfo.SharedAllocVector.size();
 
-                logf("Indirect USM Allocs for kernel %s: Fast path for %u shared allocs\n",
+                logf("Indirect USM Allocs for kernel %s: Fast path for %zu shared allocs\n",
                     getShortKernelName(kernel).c_str(),
-                    (cl_uint)count );
+                    count );
 
                 errorCode = dispatch().clSetKernelExecInfo(
                     kernel,
@@ -12647,13 +13126,13 @@ cl_int CLIntercept::setUSMKernelExecInfo(
         }
         else
         {
-            logf("Indirect USM allocs for kernel %s: %u svm ptrs, %u usm ptrs, %u host allocs, %u device allocs, %u shared allocs\n",
+            logf("Indirect USM allocs for kernel %s: %zu svm ptrs, %zu usm ptrs, %zu host allocs, %zu device allocs, %zu shared allocs\n",
                 getShortKernelName(kernel).c_str(),
-                (cl_uint)usmKernelInfo.SVMPtrs.size(),
-                (cl_uint)usmKernelInfo.USMPtrs.size(),
-                setHostAllocs ? (cl_uint)usmContextInfo.HostAllocVector.size() : 0,
-                setDeviceAllocs ? (cl_uint)usmContextInfo.DeviceAllocVector.size() : 0,
-                setSharedAllocs ? (cl_uint)usmContextInfo.SharedAllocVector.size() : 0 );
+                usmKernelInfo.SVMPtrs.size(),
+                usmKernelInfo.USMPtrs.size(),
+                setHostAllocs ? usmContextInfo.HostAllocVector.size() : 0,
+                setDeviceAllocs ? usmContextInfo.DeviceAllocVector.size() : 0,
+                setSharedAllocs ? usmContextInfo.SharedAllocVector.size() : 0 );
 
             size_t  count =
                 usmKernelInfo.SVMPtrs.size() +
@@ -12706,6 +13185,33 @@ cl_int CLIntercept::setUSMKernelExecInfo(
             logf("clSetKernelExecInfo to set indirect USM allocations returned %s (%d)!\n",
                 enumName().name(errorCode).c_str(),
                 errorCode );
+        }
+    }
+
+    return errorCode;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+cl_int CLIntercept::finishAll(
+    cl_context context )
+{
+    std::lock_guard<std::mutex> lock(m_Mutex);
+
+    const CQueueList& queues = m_ContextQueuesMap[context];
+
+    cl_int  errorCode = CL_SUCCESS;
+
+    for( auto queue : queues )
+    {
+        cl_int  tempErrorCode = dispatch().clFinish( queue );
+        if( tempErrorCode != CL_SUCCESS )
+        {
+            logf("clFinish on queue %p returned %s (%d)!\n",
+                queue,
+                enumName().name(errorCode).c_str(),
+                errorCode );
+            errorCode = tempErrorCode;
         }
     }
 

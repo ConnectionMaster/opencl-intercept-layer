@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2018-2020 Intel Corporation
+// Copyright (c) 2018-2021 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -720,6 +720,12 @@ CEnumNameMap::CEnumNameMap()
     // cl_khr_initalize_memory
     ADD_ENUM_NAME( m_cl_int, CL_CONTEXT_MEMORY_INITIALIZE_KHR );
 
+    // cl_khr_integer_dot_product
+    ADD_ENUM_NAME( m_cl_int, CL_DEVICE_INTEGER_DOT_PRODUCT_CAPABILITIES_KHR );
+
+    // cl_khr_pci_bus_info extension
+    ADD_ENUM_NAME( m_cl_int, CL_DEVICE_PCI_BUS_INFO_KHR );
+
     // cl_khr_priority_hints extension
     ADD_ENUM_NAME( m_cl_int, CL_QUEUE_PRIORITY_KHR );
 
@@ -743,7 +749,6 @@ CEnumNameMap::CEnumNameMap()
     ADD_ENUM_NAME( m_cl_int, CL_DEVICE_MAX_ATOMIC_COUNTERS_EXT );
 
     // cl_ext_cxx_for_opencl
-
     ADD_ENUM_NAME( m_cl_int, CL_DEVICE_CXX_FOR_OPENCL_NUMERIC_VERSION_EXT );
 
     // cl_ext_device_fission
@@ -810,6 +815,7 @@ CEnumNameMap::CEnumNameMap()
     ADD_ENUM_NAME( m_cl_int, CL_KERNEL_EXEC_INFO_WORKGROUP_BATCH_SIZE_ARM );
     ADD_ENUM_NAME( m_cl_int, CL_KERNEL_EXEC_INFO_WORKGROUP_BATCH_SIZE_MODIFIER_ARM );
     ADD_ENUM_NAME( m_cl_int, CL_QUEUE_KERNEL_BATCHING_ARM );
+    ADD_ENUM_NAME( m_cl_int, CL_QUEUE_DEFERRED_FLUSH_ARM );
 
     // cl_intel_accelerator
     ADD_ENUM_NAME( m_cl_int, CL_INVALID_ACCELERATOR_INTEL );
@@ -825,6 +831,28 @@ CEnumNameMap::CEnumNameMap()
 
     // cl_intel_advanced_motion_estimation
     ADD_ENUM_NAME( m_cl_int, CL_DEVICE_ME_VERSION_INTEL );
+
+    // cl_intel_command_queue_families
+    ADD_ENUM_NAME( m_cl_int, CL_DEVICE_QUEUE_FAMILY_PROPERTIES_INTEL );
+    ADD_ENUM_NAME( m_cl_int, CL_QUEUE_FAMILY_INTEL );
+    ADD_ENUM_NAME( m_cl_int, CL_QUEUE_INDEX_INTEL );
+
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_CREATE_SINGLE_QUEUE_EVENTS_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_CREATE_CROSS_QUEUE_EVENTS_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_SINGLE_QUEUE_EVENT_WAIT_LIST_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_CROSS_QUEUE_EVENT_WAIT_LIST_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_TRANSFER_BUFFER_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_TRANSFER_BUFFER_RECT_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_MAP_BUFFER_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_FILL_BUFFER_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_TRANSFER_IMAGE_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_MAP_IMAGE_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_FILL_IMAGE_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_TRANSFER_BUFFER_IMAGE_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_TRANSFER_IMAGE_BUFFER_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_MARKER_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_BARRIER_INTEL );
+    ADD_ENUM_NAME( m_cl_command_queue_capabilities_intel, CL_QUEUE_CAPABILITY_KERNEL_INTEL );
 
     // cl_intel_driver_diagnostics
     ADD_ENUM_NAME( m_cl_int, CL_CONTEXT_SHOW_DIAGNOSTICS_INTEL );
@@ -855,6 +883,9 @@ CEnumNameMap::CEnumNameMap()
 
     // cl_intel_egl_image_yuv
     ADD_ENUM_NAME( m_cl_int, CL_EGL_YUV_PLANE_INTEL );
+
+    // cl_intel_mem_channel_property
+    ADD_ENUM_NAME( m_cl_int, CL_MEM_CHANNEL_INTEL );
 
     // cl_intel_mem_force_host_memory
     ADD_ENUM_NAME( m_cl_mem_flags, CL_MEM_FORCE_HOST_MEMORY_INTEL );
@@ -991,6 +1022,7 @@ CEnumNameMap::CEnumNameMap()
     ADD_ENUM_NAME( m_cl_int, CL_DEVICE_ATTRIBUTE_ASYNC_ENGINE_COUNT_NV );
     ADD_ENUM_NAME( m_cl_int, CL_DEVICE_PCI_BUS_ID_NV );
     ADD_ENUM_NAME( m_cl_int, CL_DEVICE_PCI_SLOT_ID_NV );
+    ADD_ENUM_NAME( m_cl_int, CL_DEVICE_PCI_DOMAIN_ID_NV );
 
     // cl_qcom_ext_host_ptr extension
     ADD_ENUM_NAME( m_cl_mem_flags, CL_MEM_EXT_HOST_PTR_QCOM );

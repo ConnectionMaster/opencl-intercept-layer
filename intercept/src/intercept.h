@@ -1,5 +1,5 @@
 /*
-// Copyright (c) 2018-2020 Intel Corporation
+// Copyright (c) 2018-2021 Intel Corporation
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -75,9 +75,11 @@ public:
 
     void    callLoggingEnter(
                 const std::string& functionName,
+                const uint64_t enqueueCounter,
                 const cl_kernel kernel );
     void    callLoggingEnter(
                 const std::string& functionName,
+                const uint64_t enqueueCounter,
                 const cl_kernel kernel,
                 const char* formatStr,
                 ... );
@@ -143,6 +145,9 @@ public:
                 cl_uint num_devices,
                 const cl_device_id* devices,
                 std::string& str ) const;
+    void    getDevicePartitionPropertiesString(
+                const cl_device_partition_property* properties,
+                std::string& str ) const;
     void    getEventListString(
                 cl_uint num_events,
                 const cl_event* event_list,
@@ -199,6 +204,9 @@ public:
     void    logKernelInfo(
                 const cl_kernel* kernels,
                 cl_uint numKernels );
+    void    logQueueInfo(
+                const cl_device_id device,
+                const cl_command_queue queue );
 
     void    logCL_GLTextureDetails( cl_mem image, cl_GLenum target, cl_GLint miplevel, cl_GLuint texture );
 
@@ -249,8 +257,6 @@ public:
                 cl_event event,
                 cl_int status );
 
-    void    incrementEnqueueCounter();
-
     void    overrideNullLocalWorkSize(
                 const cl_uint work_dim,
                 const size_t* global_work_size,
@@ -293,11 +299,13 @@ public:
                 char*& injectedIL );
     bool    injectProgramOptions(
                 const cl_program program,
-                const char*& options,
+                cl_bool isCompile,
+                cl_bool isLink,
                 char*& newOptions );
     bool    appendBuildOptions(
-                const char*& options,
-                char*& newOptions );
+                const char* append,
+                const char* options,
+                char*& newOptions ) const;
     void    dumpProgramSourceScript(
                 const cl_program program,
                 const char* singleString );
@@ -322,6 +330,8 @@ public:
                 const char* options );
     void    dumpProgramOptions(
                 const cl_program program,
+                cl_bool isCompile,
+                cl_bool isLink,
                 const char* options );
     void    dumpProgramBuildLog(
                 const cl_program program,
@@ -355,22 +365,24 @@ public:
 
     void    modifyCommandQueueProperties(
                 cl_command_queue_properties& props ) const;
-    void    createCommandQueueOverrideInit(
-                cl_device_id device,
-                const cl_queue_properties* properties,
-                cl_queue_properties*& pLocalQueueProperties ) const;
-    void    createCommandQueueOverrideCleanup(
-                cl_queue_properties*& pLocalQueueProperties ) const;
-    void    createCommandQueuePropertiesInit(
+    void    createCommandQueueProperties(
                 cl_device_id device,
                 cl_command_queue_properties props,
                 cl_queue_properties*& pLocalQueueProperties ) const;
-    void    createCommandQueuePropertiesCleanup(
+    void    createCommandQueuePropertiesOverride(
+                cl_device_id device,
+                const cl_queue_properties* properties,
                 cl_queue_properties*& pLocalQueueProperties ) const;
-    bool    checkHostPerformanceTimingEnqueueLimits() const;
-    bool    checkDevicePerformanceTimingEnqueueLimits() const;
+    bool    checkHostPerformanceTimingEnqueueLimits(
+                uint64_t enqueueCounter ) const;
+    bool    checkDevicePerformanceTimingEnqueueLimits(
+                uint64_t enqueueCounter ) const;
+    void    dummyCommandQueue(
+                cl_context context,
+                cl_device_id device );
     void    addTimingEvent(
                 const std::string& functionName,
+                const uint64_t enqueueCounter,
                 const clock::time_point queuedTime,
                 const cl_kernel kernel,
                 const cl_uint workDim,
@@ -415,9 +427,15 @@ public:
                 std::string& str ) const;
 
     void    addQueue(
+                cl_context context,
                 cl_command_queue queue );
     void    checkRemoveQueue(
                 cl_command_queue queue );
+    void    addEvent(
+                cl_event event,
+                uint64_t enqueueCounter );
+    void    checkRemoveEvent(
+                cl_event event );
     void    addBuffer(
                 cl_mem buffer );
     void    addImage(
@@ -429,6 +447,11 @@ public:
                 size_t size );
     void    removeSVMAllocation(
                 void* svmPtr );
+    void    addUSMAllocation(
+                void* usmPtr,
+                size_t size );
+    void    removeUSMAllocation(
+                void* usmPtr );
     void    setKernelArg(
                 cl_kernel kernel,
                 cl_uint arg_index,
@@ -437,22 +460,30 @@ public:
                 cl_kernel kernel,
                 cl_uint arg_index,
                 const void* arg );
+    void    setKernelArgUSMPointer(
+                cl_kernel kernel,
+                cl_uint arg_index,
+                const void* arg );
     void    dumpBuffersForKernel(
                 const std::string& name,
+                const uint64_t enqueueCounter,
                 cl_kernel kernel,
                 cl_command_queue command_queue );
     void    dumpImagesForKernel(
                 const std::string& name,
+                const uint64_t enqueueCounter,
                 cl_kernel kernel,
                 cl_command_queue command_queue );
 
     void    dumpArgument(
+                const uint64_t enqueueCounter,
                 cl_kernel kernel,
                 cl_int arg_index,
                 size_t size,
                 const void *pBuffer );
     void    dumpBuffer(
                 const std::string& name,
+                const uint64_t enqueueCounter,
                 cl_mem memobj,
                 cl_command_queue command_queue,
                 void* ptr,
@@ -468,8 +499,18 @@ public:
                 cl_kernel kernel,
                 const void* arg );
 
+    bool    checkRelaxAllocationLimitsSupport(
+                cl_program program ) const;
+    bool    checkRelaxAllocationLimitsSupport(
+                cl_uint numDevices,
+                const cl_device_id* deviceList ) const;
+    void    usmAllocPropertiesOverride(
+                const cl_mem_properties_intel* properties,
+                cl_mem_properties_intel*& pLocalAllocProperties ) const;
+
     void    startAubCapture(
                 const std::string& functionName,
+                const uint64_t enqueueCounter,
                 const cl_kernel kernel,
                 const cl_uint workDim,
                 const size_t* gws,
@@ -651,24 +692,33 @@ public:
     cl_platform_id  getPlatform( cl_kernel kernel ) const;
     cl_platform_id  getPlatform( cl_mem memobj ) const;
 
+    cl_uint getRefCount( cl_accelerator_intel accelerator );
+    cl_uint getRefCount( cl_command_queue queue ) const;
+    cl_uint getRefCount( cl_context conest ) const;
+    cl_uint getRefCount( cl_device_id device ) const;
+    cl_uint getRefCount( cl_event event ) const;
+    cl_uint getRefCount( cl_program program ) const;
+    cl_uint getRefCount( cl_kernel kernel ) const;
+    cl_uint getRefCount( cl_mem memobj ) const;
+    cl_uint getRefCount( cl_sampler sampler ) const;
+
     const OS::Services& OS() const;
 
     const CEnumNameMap& enumName() const;
 
     const Config&   config() const;
 
+    uint64_t    getEnqueueCounter() const;
+    uint64_t    incrementEnqueueCounter();
+
     CObjectTracker& objectTracker();
-
-    bool    callLogging() const;
-
-    bool    nullEnqueue() const;
 
     bool    dumpBufferForKernel( const cl_kernel kernel );
     bool    dumpImagesForKernel( const cl_kernel kernel );
-    bool    checkDumpBufferEnqueueLimits() const;
-    bool    checkDumpImageEnqueueLimits() const;
+    bool    checkDumpBufferEnqueueLimits( uint64_t enqueueCounter ) const;
+    bool    checkDumpImageEnqueueLimits( uint64_t enqueueCounter ) const;
 
-    bool    checkAubCaptureEnqueueLimits() const;
+    bool    checkAubCaptureEnqueueLimits( uint64_t enqueueCounter ) const;
     bool    checkAubCaptureKernelSignature(
                 const cl_kernel kernel,
                 cl_uint workDim,
@@ -705,6 +755,8 @@ public:
 
     void    chromeCallLoggingExit(
                 const std::string& functionName,
+                bool includeId,
+                const uint64_t enqueueCounter,
                 const cl_kernel kernel,
                 clock::time_point start,
                 clock::time_point end );
@@ -712,6 +764,7 @@ public:
                 cl_command_queue queue );
     void    chromeTraceEvent(
                 const std::string& name,
+                uint64_t enqueueCounter,
                 unsigned int queueNumber,
                 cl_event event,
                 clock::time_point queuedTime );
@@ -756,6 +809,9 @@ public:
     cl_int  setUSMKernelExecInfo(
                 cl_command_queue queue,
                 cl_kernel kernel );
+
+    cl_int  finishAll(
+                cl_context conetxt );
 
 private:
     static const char* sc_URL;
@@ -976,6 +1032,13 @@ private:
     typedef std::map< cl_command_queue, unsigned int >  CQueueNumberMap;
     CQueueNumberMap m_QueueNumberMap;
 
+    typedef std::list< cl_command_queue >   CQueueList;
+    typedef std::map< cl_context, CQueueList >  CContextQueuesMap;
+    CContextQueuesMap   m_ContextQueuesMap;
+
+    typedef std::map< cl_event, uint64_t >  CEventIdMap;
+    CEventIdMap m_EventIdMap;
+
     unsigned int    m_MemAllocNumber;
 
     typedef std::map< const void*, unsigned int >   CMemAllocNumberMap;
@@ -989,6 +1052,9 @@ private:
 
     typedef std::map< const void*, size_t >    CSVMAllocInfoMap;
     CSVMAllocInfoMap    m_SVMAllocInfoMap;
+
+    typedef std::map< const void*, size_t >    CUSMAllocInfoMap;
+    CUSMAllocInfoMap    m_USMAllocInfoMap;
 
     struct SImageInfo
     {
@@ -1040,7 +1106,7 @@ private:
     typedef std::map< const cl_context, SBuiltinKernelOverrides* >  CBuiltinKernelOverridesMap;
     CBuiltinKernelOverridesMap  m_BuiltinKernelOverridesMap;
 
-    typedef std::map< const cl_accelerator_intel, cl_platform_id>   CAcceleratorInfoMap;
+    typedef std::map< const cl_accelerator_intel, cl_platform_id >  CAcceleratorInfoMap;
     CAcceleratorInfoMap     m_AcceleratorInfoMap;
 
     struct Config
@@ -1295,6 +1361,128 @@ inline cl_platform_id CLIntercept::getPlatform( cl_mem memobj ) const
 
 ///////////////////////////////////////////////////////////////////////////////
 //
+inline cl_uint CLIntercept::getRefCount( cl_accelerator_intel accelerator )
+{
+    auto platform = this->getPlatform(accelerator);
+    auto dispatchX = this->dispatchX(platform);
+    if( dispatchX.clGetAcceleratorInfoINTEL == NULL )
+    {
+        getExtensionFunctionAddress(
+            platform,
+            "clGetAcceleratorInfoINTEL" );
+    }
+
+    cl_uint refCount = 0;
+    if( dispatchX.clGetAcceleratorInfoINTEL )
+    {
+        dispatchX.clGetAcceleratorInfoINTEL(
+            accelerator,
+            CL_ACCELERATOR_REFERENCE_COUNT_INTEL,
+            sizeof(refCount),
+            &refCount,
+            NULL );
+    }
+    return refCount;
+}
+
+inline cl_uint CLIntercept::getRefCount( cl_command_queue queue ) const
+{
+    cl_uint refCount = 0;
+    dispatch().clGetCommandQueueInfo(
+        queue,
+        CL_QUEUE_REFERENCE_COUNT,
+        sizeof(refCount),
+        &refCount,
+        NULL);
+    return refCount;
+}
+
+inline cl_uint CLIntercept::getRefCount( cl_context context ) const
+{
+    cl_uint refCount = 0;
+    dispatch().clGetContextInfo(
+        context,
+        CL_CONTEXT_REFERENCE_COUNT,
+        sizeof(refCount),
+        &refCount,
+        NULL);
+    return refCount;
+}
+
+inline cl_uint CLIntercept::getRefCount( cl_device_id device ) const
+{
+    cl_uint refCount = 0;
+    dispatch().clGetDeviceInfo(
+        device,
+        CL_DEVICE_REFERENCE_COUNT,
+        sizeof(refCount),
+        &refCount,
+        NULL);
+    return refCount;
+}
+
+inline cl_uint CLIntercept::getRefCount( cl_event event ) const
+{
+    cl_uint refCount = 0;
+    dispatch().clGetEventInfo(
+        event,
+        CL_EVENT_REFERENCE_COUNT,
+        sizeof(refCount),
+        &refCount,
+        NULL);
+    return refCount;
+}
+
+inline cl_uint CLIntercept::getRefCount( cl_program program ) const
+{
+    cl_uint refCount = 0;
+    dispatch().clGetProgramInfo(
+        program,
+        CL_PROGRAM_REFERENCE_COUNT,
+        sizeof(refCount),
+        &refCount,
+        NULL);
+    return refCount;
+}
+
+inline cl_uint CLIntercept::getRefCount( cl_kernel kernel ) const
+{
+    cl_uint refCount = 0;
+    dispatch().clGetKernelInfo(
+        kernel,
+        CL_KERNEL_REFERENCE_COUNT,
+        sizeof(refCount),
+        &refCount,
+        NULL);
+    return refCount;
+}
+
+inline cl_uint CLIntercept::getRefCount( cl_mem memobj ) const
+{
+    cl_uint refCount = 0;
+    dispatch().clGetMemObjectInfo(
+        memobj,
+        CL_MEM_REFERENCE_COUNT,
+        sizeof(refCount),
+        &refCount,
+        NULL);
+    return refCount;
+}
+
+inline cl_uint CLIntercept::getRefCount( cl_sampler sampler ) const
+{
+    cl_uint refCount = 0;
+    dispatch().clGetSamplerInfo(
+        sampler,
+        CL_SAMPLER_REFERENCE_COUNT,
+        sizeof(refCount),
+        &refCount,
+        NULL);
+    return refCount;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
 inline const OS::Services& CLIntercept::OS() const
 {
     return m_OS;
@@ -1313,6 +1501,25 @@ inline const CLIntercept::Config& CLIntercept::config() const
 {
     return m_Config;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+//
+inline uint64_t CLIntercept::getEnqueueCounter() const
+{
+    return m_EnqueueCounter;
+}
+
+inline uint64_t CLIntercept::incrementEnqueueCounter()
+{
+    std::lock_guard<std::mutex> lock(m_Mutex);
+    return m_EnqueueCounter++;
+}
+
+#define GET_ENQUEUE_COUNTER()                                               \
+    uint64_t enqueueCounter = pIntercept->getEnqueueCounter();
+
+#define INCREMENT_ENQUEUE_COUNTER()                                         \
+    uint64_t enqueueCounter = pIntercept->incrementEnqueueCounter();
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -1368,22 +1575,19 @@ inline CObjectTracker& CLIntercept::objectTracker()
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-inline bool CLIntercept::callLogging() const
-{
-    return m_Config.CallLogging;
-}
-
 #define CALL_LOGGING_ENTER(...)                                             \
     if( pIntercept->config().CallLogging )                                  \
     {                                                                       \
-        pIntercept->callLoggingEnter( __FUNCTION__, NULL, ##__VA_ARGS__ );  \
+        pIntercept->callLoggingEnter(                                       \
+            __FUNCTION__, enqueueCounter, NULL, ##__VA_ARGS__ );            \
     }                                                                       \
     ITT_CALL_LOGGING_ENTER( NULL );
 
 #define CALL_LOGGING_ENTER_KERNEL(kernel, ...)                              \
     if( pIntercept->config().CallLogging )                                  \
     {                                                                       \
-        pIntercept->callLoggingEnter( __FUNCTION__, kernel, ##__VA_ARGS__ );\
+        pIntercept->callLoggingEnter(                                       \
+            __FUNCTION__, enqueueCounter, kernel, ##__VA_ARGS__ );          \
     }                                                                       \
     ITT_CALL_LOGGING_ENTER( kernel );
 
@@ -1402,6 +1606,16 @@ inline bool CLIntercept::callLogging() const
             NULL,                                                           \
             ##__VA_ARGS__ );                                                \
     }                                                                       \
+    if( pIntercept->config().ChromeCallLogging )                            \
+    {                                                                       \
+        pIntercept->chromeCallLoggingExit(                                  \
+            __FUNCTION__,                                                   \
+            false,                                                          \
+            0,                                                              \
+            NULL,                                                           \
+            cpuStart,                                                       \
+            cpuEnd );                                                       \
+    }                                                                       \
     ITT_CALL_LOGGING_EXIT();
 
 #define CALL_LOGGING_EXIT_EVENT(errorCode, event, ...)                      \
@@ -1412,6 +1626,37 @@ inline bool CLIntercept::callLogging() const
             errorCode,                                                      \
             event,                                                          \
             ##__VA_ARGS__ );                                                \
+    }                                                                       \
+    if( pIntercept->config().ChromeCallLogging )                            \
+    {                                                                       \
+        pIntercept->chromeCallLoggingExit(                                  \
+            __FUNCTION__,                                                   \
+            true,                                                           \
+            enqueueCounter,                                                 \
+            NULL,                                                           \
+            cpuStart,                                                       \
+            cpuEnd );                                                       \
+    }                                                                       \
+    ITT_CALL_LOGGING_EXIT();
+
+#define CALL_LOGGING_EXIT_KERNEL_EVENT(errorCode, kernel, event, ...)       \
+    if( pIntercept->config().CallLogging )                                  \
+    {                                                                       \
+        pIntercept->callLoggingExit(                                        \
+            __FUNCTION__,                                                   \
+            errorCode,                                                      \
+            event,                                                          \
+            ##__VA_ARGS__ );                                                \
+    }                                                                       \
+    if( pIntercept->config().ChromeCallLogging )                            \
+    {                                                                       \
+        pIntercept->chromeCallLoggingExit(                                  \
+            __FUNCTION__,                                                   \
+            true,                                                           \
+            enqueueCounter,                                                 \
+            kernel,                                                         \
+            cpuStart,                                                       \
+            cpuEnd );                                                       \
     }                                                                       \
     ITT_CALL_LOGGING_EXIT();
 
@@ -1506,7 +1751,6 @@ inline bool CLIntercept::callLogging() const
 ///////////////////////////////////////////////////////////////////////////////
 //
 #define FINISH_OR_FLUSH_AFTER_ENQUEUE( _command_queue )                     \
-    pIntercept->incrementEnqueueCounter();                                  \
     if( pIntercept->config().FinishAfterEnqueue )                           \
     {                                                                       \
         pIntercept->logFlushOrFinishAfterEnqueueStart(                      \
@@ -1546,13 +1790,6 @@ inline bool CLIntercept::callLogging() const
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-inline bool CLIntercept::nullEnqueue() const
-{
-    return m_Config.NullEnqueue;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
 inline bool CLIntercept::dumpBufferForKernel( const cl_kernel kernel )
 {
     // Note: This currently checks the long kernel name.
@@ -1569,54 +1806,79 @@ inline bool CLIntercept::dumpImagesForKernel( const cl_kernel kernel )
         m_KernelInfoMap[ kernel ].KernelName == m_Config.DumpImagesForKernel;
 }
 
-inline bool CLIntercept::checkDumpBufferEnqueueLimits() const
+inline bool CLIntercept::checkDumpBufferEnqueueLimits(
+    uint64_t enqueueCounter ) const
 {
-    return ( m_EnqueueCounter >= m_Config.DumpBuffersMinEnqueue ) &&
-           ( m_EnqueueCounter <= m_Config.DumpBuffersMaxEnqueue );
+    return ( enqueueCounter >= m_Config.DumpBuffersMinEnqueue ) &&
+           ( enqueueCounter <= m_Config.DumpBuffersMaxEnqueue );
 }
 
-inline bool CLIntercept::checkDumpImageEnqueueLimits() const
+inline bool CLIntercept::checkDumpImageEnqueueLimits(
+    uint64_t enqueueCounter ) const
 {
-    return ( m_EnqueueCounter >= m_Config.DumpImagesMinEnqueue ) &&
-           ( m_EnqueueCounter <= m_Config.DumpImagesMaxEnqueue );
+    return ( enqueueCounter >= m_Config.DumpImagesMinEnqueue ) &&
+           ( enqueueCounter <= m_Config.DumpImagesMaxEnqueue );
 }
 
-#define ADD_QUEUE( queue )                                                  \
-    if( queue &&                                                            \
-        pIntercept->config().ChromePerformanceTiming )                      \
+#define ADD_QUEUE( _context, _queue )                                       \
+    if( _queue &&                                                           \
+        ( pIntercept->config().ChromePerformanceTiming ||                   \
+          pIntercept->config().Emulate_cl_intel_unified_shared_memory ) )   \
     {                                                                       \
-        pIntercept->addQueue( queue );                                      \
-        pIntercept->chromeRegisterCommandQueue( queue );                    \
+        pIntercept->addQueue(                                               \
+            _context,                                                       \
+            _queue );                                                       \
+        if( pIntercept->config().ChromePerformanceTiming )                  \
+        {                                                                   \
+            pIntercept->chromeRegisterCommandQueue( _queue );               \
+        }                                                                   \
     }
 
-#define REMOVE_QUEUE( queue )                                               \
-    if( queue &&                                                            \
-        pIntercept->config().ChromePerformanceTiming )                      \
+#define REMOVE_QUEUE( _queue )                                              \
+    if( _queue &&                                                           \
+        ( pIntercept->config().ChromePerformanceTiming ||                   \
+          pIntercept->config().Emulate_cl_intel_unified_shared_memory ) )   \
     {                                                                       \
-        pIntercept->checkRemoveQueue( queue );                              \
+        pIntercept->checkRemoveQueue( _queue );                             \
     }
 
-#define ADD_BUFFER( buffer )                                                \
-    if( buffer &&                                                           \
+#define ADD_EVENT( _event )                                                 \
+    if( ( _event ) &&                                                       \
+        ( pIntercept->config().ChromeCallLogging ||                         \
+          pIntercept->config().ChromePerformanceTiming ) )                  \
+    {                                                                       \
+        pIntercept->addEvent( _event, enqueueCounter );                     \
+    }
+
+#define REMOVE_EVENT( _event )                                              \
+    if( ( _event ) &&                                                       \
+        ( pIntercept->config().ChromeCallLogging ||                         \
+          pIntercept->config().ChromePerformanceTiming ) )                  \
+    {                                                                       \
+        pIntercept->checkRemoveEvent( _event );                             \
+    }
+
+#define ADD_BUFFER( _buffer )                                               \
+    if( _buffer &&                                                          \
         ( pIntercept->config().DumpBuffersAfterCreate ||                    \
           pIntercept->config().DumpBuffersAfterMap ||                       \
           pIntercept->config().DumpBuffersBeforeUnmap ||                    \
           pIntercept->config().DumpBuffersBeforeEnqueue ||                  \
           pIntercept->config().DumpBuffersAfterEnqueue ) )                  \
     {                                                                       \
-        pIntercept->addBuffer( buffer );                                    \
+        pIntercept->addBuffer( _buffer );                                   \
     }
 
-#define ADD_IMAGE( image )                                                  \
-    if( image &&                                                            \
+#define ADD_IMAGE( _image )                                                 \
+    if( _image &&                                                           \
         ( pIntercept->config().DumpImagesBeforeEnqueue ||                   \
           pIntercept->config().DumpImagesAfterEnqueue ) )                   \
     {                                                                       \
-        pIntercept->addImage( image );                                      \
+        pIntercept->addImage( _image );                                     \
     }
 
-#define REMOVE_MEMOBJ( memobj )                                             \
-    if( memobj &&                                                           \
+#define REMOVE_MEMOBJ( _memobj )                                            \
+    if( _memobj &&                                                          \
         ( pIntercept->config().DumpBuffersAfterCreate ||                    \
           pIntercept->config().DumpBuffersAfterMap ||                       \
           pIntercept->config().DumpBuffersBeforeUnmap ||                    \
@@ -1625,7 +1887,7 @@ inline bool CLIntercept::checkDumpImageEnqueueLimits() const
           pIntercept->config().DumpImagesBeforeEnqueue ||                   \
           pIntercept->config().DumpImagesAfterEnqueue ) )                   \
     {                                                                       \
-        pIntercept->checkRemoveMemObj( memobj );                            \
+        pIntercept->checkRemoveMemObj( _memobj );                           \
     }
 
 #define ADD_SAMPLER( sampler, str )                                         \
@@ -1658,7 +1920,28 @@ inline bool CLIntercept::checkDumpImageEnqueueLimits() const
         pIntercept->removeSVMAllocation( svmPtr );                          \
     }
 
+#define ADD_USM_ALLOCATION( usmPtr, size )                                  \
+    if( usmPtr &&                                                           \
+        ( pIntercept->config().DumpBuffersBeforeEnqueue ||                  \
+          pIntercept->config().DumpBuffersAfterEnqueue ) )                  \
+    {                                                                       \
+        pIntercept->addUSMAllocation( usmPtr, size );                       \
+    }
+
+#define REMOVE_USM_ALLOCATION( usmPtr )                                     \
+    if( usmPtr &&                                                           \
+        ( pIntercept->config().DumpBuffersBeforeEnqueue ||                  \
+          pIntercept->config().DumpBuffersAfterEnqueue ) )                  \
+    {                                                                       \
+        pIntercept->removeUSMAllocation( usmPtr );                          \
+    }
+
 #define SET_KERNEL_ARG( kernel, arg_index, arg_size, arg_value )            \
+    if ( pIntercept->config().DumpArgumentsOnSet )                          \
+    {                                                                       \
+        pIntercept->dumpArgument(                                           \
+            enqueueCounter, kernel, arg_index, arg_size, arg_value );       \
+    }                                                                       \
     if( ( pIntercept->config().DumpBuffersBeforeEnqueue ||                  \
           pIntercept->config().DumpBuffersAfterEnqueue ||                   \
           pIntercept->config().DumpImagesBeforeEnqueue ||                   \
@@ -1675,6 +1958,13 @@ inline bool CLIntercept::checkDumpImageEnqueueLimits() const
         pIntercept->config().DumpBuffersAfterEnqueue )                      \
     {                                                                       \
         pIntercept->setKernelArgSVMPointer( kernel, arg_index, arg_value ); \
+    }
+
+#define SET_KERNEL_ARG_USM_POINTER( kernel, arg_index, arg_value )          \
+    if( pIntercept->config().DumpBuffersBeforeEnqueue ||                    \
+        pIntercept->config().DumpBuffersAfterEnqueue )                      \
+    {                                                                       \
+        pIntercept->setKernelArgUSMPointer( kernel, arg_index, arg_value ); \
     }
 
 #define INITIALIZE_BUFFER_CONTENTS_INIT( _flags, _size, _ptr )              \
@@ -1706,97 +1996,107 @@ inline bool CLIntercept::checkDumpImageEnqueueLimits() const
 #define DUMP_BUFFER_AFTER_CREATE( memobj, flags, ptr, size )                \
     if( memobj &&                                                           \
         ( flags & ( CL_MEM_COPY_HOST_PTR | CL_MEM_USE_HOST_PTR ) ) &&       \
-        pIntercept->checkDumpBufferEnqueueLimits() &&                       \
+        pIntercept->checkDumpBufferEnqueueLimits( enqueueCounter ) &&       \
         pIntercept->config().DumpBuffersAfterCreate )                       \
     {                                                                       \
-        pIntercept->dumpBuffer( "Create", memobj, NULL, ptr, 0, size );     \
+        pIntercept->dumpBuffer(                                             \
+            "Create", enqueueCounter, memobj, NULL, ptr, 0, size );         \
     }
 
 #define DUMP_BUFFER_AFTER_MAP( command_queue, memobj, blocking_map, flags, ptr, offset, size ) \
     if( memobj &&                                                           \
         !( flags & CL_MAP_WRITE_INVALIDATE_REGION ) &&                      \
-        pIntercept->checkDumpBufferEnqueueLimits() &&                       \
+        pIntercept->checkDumpBufferEnqueueLimits( enqueueCounter ) &&       \
         pIntercept->config().DumpBuffersAfterMap )                          \
     {                                                                       \
         if( blocking_map == false )                                         \
         {                                                                   \
             pIntercept->dispatch().clFinish( command_queue );               \
         }                                                                   \
-        pIntercept->dumpBuffer( "Map", memobj, NULL, ptr, offset, size );   \
+        pIntercept->dumpBuffer(                                             \
+            "Map", enqueueCounter, memobj, NULL, ptr, offset, size );       \
     }
 
 #define DUMP_BUFFER_BEFORE_UNMAP( memobj, command_queue)                    \
     if( memobj &&                                                           \
         command_queue &&                                                    \
-        pIntercept->checkDumpBufferEnqueueLimits() &&                       \
+        pIntercept->checkDumpBufferEnqueueLimits( enqueueCounter ) &&       \
         pIntercept->config().DumpBuffersBeforeUnmap )                       \
     {                                                                       \
-        pIntercept->dumpBuffer( "Unmap", memobj, command_queue, NULL, 0, 0 );\
+        pIntercept->dumpBuffer(                                             \
+            "Unmap", enqueueCounter, memobj, command_queue, NULL, 0, 0 );   \
     }
 
 #define DUMP_BUFFERS_BEFORE_ENQUEUE( kernel, command_queue )                \
-    if( pIntercept->checkDumpBufferEnqueueLimits() &&                       \
+    if( pIntercept->checkDumpBufferEnqueueLimits( enqueueCounter ) &&       \
         pIntercept->config().DumpBuffersBeforeEnqueue &&                    \
         pIntercept->dumpBufferForKernel( kernel ) )                         \
     {                                                                       \
-        pIntercept->dumpBuffersForKernel( "Pre", kernel, command_queue );   \
+        pIntercept->dumpBuffersForKernel(                                   \
+            "Pre", enqueueCounter, kernel, command_queue );                 \
     }
 
 #define DUMP_BUFFERS_AFTER_ENQUEUE( kernel, command_queue )                 \
-    if( pIntercept->checkDumpBufferEnqueueLimits() &&                       \
+    if( pIntercept->checkDumpBufferEnqueueLimits( enqueueCounter ) &&       \
         pIntercept->config().DumpBuffersAfterEnqueue &&                     \
         pIntercept->dumpBufferForKernel( kernel ) )                         \
     {                                                                       \
-        pIntercept->dumpBuffersForKernel( "Post", kernel, command_queue );  \
+        pIntercept->dumpBuffersForKernel(                                   \
+            "Post", enqueueCounter, kernel, command_queue );                \
     }
 
 #define DUMP_IMAGES_BEFORE_ENQUEUE( kernel, command_queue )                 \
-    if( pIntercept->checkDumpImageEnqueueLimits() &&                        \
+    if( pIntercept->checkDumpImageEnqueueLimits( enqueueCounter ) &&        \
         pIntercept->config().DumpImagesBeforeEnqueue &&                     \
         pIntercept->dumpImagesForKernel( kernel ) )                         \
     {                                                                       \
-        pIntercept->dumpImagesForKernel( "Pre", kernel, command_queue );    \
+        pIntercept->dumpImagesForKernel(                                    \
+            "Pre", enqueueCounter, kernel, command_queue );                 \
     }
 
 #define DUMP_IMAGES_AFTER_ENQUEUE( kernel, command_queue )                  \
-    if( pIntercept->checkDumpImageEnqueueLimits() &&                        \
+    if( pIntercept->checkDumpImageEnqueueLimits( enqueueCounter ) &&        \
         pIntercept->config().DumpImagesAfterEnqueue &&                      \
         pIntercept->dumpImagesForKernel( kernel ) )                         \
     {                                                                       \
-        pIntercept->dumpImagesForKernel( "Post", kernel, command_queue );   \
+        pIntercept->dumpImagesForKernel(                                    \
+            "Post", enqueueCounter, kernel, command_queue );                \
     }
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-inline bool CLIntercept::checkAubCaptureEnqueueLimits() const
+inline bool CLIntercept::checkAubCaptureEnqueueLimits(
+    uint64_t enqueueCounter ) const
 {
-    return ( m_EnqueueCounter >= m_Config.AubCaptureMinEnqueue ) &&
-           ( m_EnqueueCounter <= m_Config.AubCaptureMaxEnqueue );
+    return ( enqueueCounter >= m_Config.AubCaptureMinEnqueue ) &&
+           ( enqueueCounter <= m_Config.AubCaptureMaxEnqueue );
 }
 
 // Note: We do not individually aub capture non-kernel enqueues at the moment.
 #define CHECK_AUBCAPTURE_START( command_queue )                             \
     if( pIntercept->config().AubCapture &&                                  \
-        pIntercept->checkAubCaptureEnqueueLimits() &&                       \
+        pIntercept->checkAubCaptureEnqueueLimits( enqueueCounter ) &&       \
         !pIntercept->config().AubCaptureIndividualEnqueues )                \
     {                                                                       \
         pIntercept->startAubCapture(                                        \
-            __FUNCTION__, NULL, 0, NULL, NULL, command_queue );             \
+            __FUNCTION__, enqueueCounter,                                   \
+            NULL, 0, NULL, NULL, command_queue );                           \
     }
 
 #define CHECK_AUBCAPTURE_START_KERNEL( kernel, wd, gws, lws, command_queue )\
     if( pIntercept->config().AubCapture &&                                  \
-        pIntercept->checkAubCaptureEnqueueLimits() &&                       \
+        pIntercept->checkAubCaptureEnqueueLimits( enqueueCounter ) &&       \
         pIntercept->checkAubCaptureKernelSignature( kernel, wd, gws, lws ) )\
     {                                                                       \
         pIntercept->startAubCapture(                                        \
-            __FUNCTION__, kernel, wd, gws, lws, command_queue );            \
+            __FUNCTION__, enqueueCounter,                                   \
+            kernel, wd, gws, lws, command_queue );                          \
     }
 
 #define CHECK_AUBCAPTURE_STOP( command_queue )                              \
     if( pIntercept->config().AubCapture &&                                  \
         ( pIntercept->config().AubCaptureIndividualEnqueues ||              \
-          !pIntercept->checkAubCaptureEnqueueLimits() ) )                   \
+          !pIntercept->checkAubCaptureEnqueueLimits( enqueueCounter ) ) )   \
     {                                                                       \
         pIntercept->stopAubCapture( command_queue );                        \
     }
@@ -1837,6 +2137,47 @@ inline bool CLIntercept::checkAubCaptureEnqueueLimits() const
     {                                                                       \
         pIntercept->saveProgramOptionsHash( program, options );             \
     }
+
+#define DUMP_PROGRAM_OPTIONS( program, options, isCompile, isLink )         \
+    if( ( modified == false ) &&                                            \
+        ( pIntercept->config().DumpProgramSource ||                         \
+          pIntercept->config().DumpInputProgramBinaries ||                  \
+          pIntercept->config().DumpProgramBinaries ||                       \
+          pIntercept->config().DumpProgramSPIRV ) )                         \
+    {                                                                       \
+        pIntercept->dumpProgramOptions(                                     \
+            program,                                                        \
+            isCompile,                                                      \
+            isLink,                                                         \
+            options );                                                      \
+    }                                                                       \
+    else if( ( modified == false ) &&                                       \
+             ( pIntercept->config().SimpleDumpProgramSource ||              \
+               pIntercept->config().DumpProgramSourceScript ) )             \
+    {                                                                       \
+        pIntercept->dumpProgramOptionsScript( program, options );           \
+    }
+
+#define INCREMENT_PROGRAM_COMPILE_COUNT( _program )                         \
+    if( _program &&                                                         \
+        ( pIntercept->config().BuildLogging ||                              \
+          pIntercept->config().KernelNameHashTracking ||                    \
+          pIntercept->config().InjectProgramSource ||                       \
+          pIntercept->config().DumpProgramSourceScript ||                   \
+          pIntercept->config().DumpProgramSource ||                         \
+          pIntercept->config().DumpProgramBinaries ||                       \
+          pIntercept->config().DumpProgramSPIRV ||                          \
+          pIntercept->config().DumpProgramBuildLogs ||                      \
+          pIntercept->config().DumpKernelISABinaries ||                     \
+          pIntercept->config().AutoCreateSPIRV ||                           \
+          pIntercept->config().AubCaptureUniqueKernels ) )                  \
+    {                                                                       \
+        pIntercept->incrementProgramCompileCount( _program );               \
+    }
+
+#define PROGRAM_OPTIONS_CLEANUP( newOptions )                               \
+    delete [] newOptions;                                                   \
+    newOptions = NULL;
 
 // Called from clCreateProgramWithSource:
 
@@ -1976,41 +2317,53 @@ inline bool CLIntercept::checkAubCaptureEnqueueLimits() const
 
 // Called from clLinkProgram:
 
-#define SAVE_PROGRAM_NUMBER( program )                                      \
-    pIntercept->saveProgramNumber( program );
-
-// Called from clBuildProgram:
-
-#define MODIFY_PROGRAM_OPTIONS( program, options, newOptions )              \
+#define PROGRAM_LINK_OPTIONS_OVERRIDE_INIT( numDevices, deviceList, options, newOptions ) \
     bool    modified = false;                                               \
-    if( pIntercept->config().InjectProgramSource )                          \
+    if( !pIntercept->config().AppendLinkOptions.empty() )                   \
     {                                                                       \
-        modified |= pIntercept->injectProgramOptions(                       \
-            program,                                                        \
+        modified |= pIntercept->appendBuildOptions(                         \
+            pIntercept->config().AppendLinkOptions.c_str(),                 \
             options,                                                        \
             newOptions );                                                   \
     }                                                                       \
-    if( !pIntercept->config().AppendBuildOptions.empty() )                  \
+    if( pIntercept->config().RelaxAllocationLimits &&                       \
+        pIntercept->checkRelaxAllocationLimitsSupport( numDevices, deviceList ) )\
     {                                                                       \
         modified |= pIntercept->appendBuildOptions(                         \
+            "-cl-intel-greater-than-4GB-buffer-required",                   \
             options,                                                        \
             newOptions );                                                   \
     }
 
-#define DUMP_PROGRAM_OPTIONS( program, options )                            \
-    if( ( modified == false ) &&                                            \
-        ( pIntercept->config().DumpProgramSource ||                         \
-          pIntercept->config().DumpInputProgramBinaries ||                  \
-          pIntercept->config().DumpProgramBinaries ||                       \
-          pIntercept->config().DumpProgramSPIRV ) )                         \
+#define SAVE_PROGRAM_NUMBER( program )                                      \
+    pIntercept->saveProgramNumber( program );
+
+// Called from clCompileProgram and clBuildProgram:
+
+#define PROGRAM_OPTIONS_OVERRIDE_INIT( _program, _options, _newOptions, _isCompile ) \
+    bool    modified = false;                                               \
+    if( pIntercept->config().InjectProgramSource )                          \
     {                                                                       \
-        pIntercept->dumpProgramOptions( program, options );                 \
+        modified |= pIntercept->injectProgramOptions(                       \
+            _program,                                                       \
+            _isCompile,                                                     \
+            false, /* isLink */                                             \
+            _newOptions );                                                  \
     }                                                                       \
-    else if( ( modified == false ) &&                                       \
-             ( pIntercept->config().SimpleDumpProgramSource ||              \
-               pIntercept->config().DumpProgramSourceScript ) )             \
+    if( !pIntercept->config().AppendBuildOptions.empty() )                  \
     {                                                                       \
-        pIntercept->dumpProgramOptionsScript( program, options );           \
+        modified |= pIntercept->appendBuildOptions(                         \
+            pIntercept->config().AppendBuildOptions.c_str(),                \
+            _options,                                                       \
+            _newOptions );                                                  \
+    }                                                                       \
+    if( pIntercept->config().RelaxAllocationLimits &&                       \
+        pIntercept->checkRelaxAllocationLimitsSupport( program ) )          \
+    {                                                                       \
+        modified |= pIntercept->appendBuildOptions(                         \
+            "-cl-intel-greater-than-4GB-buffer-required",                   \
+            _options,                                                       \
+            _newOptions );                                                  \
     }
 
 #define DUMP_OUTPUT_PROGRAM_BINARIES( program )                             \
@@ -2030,27 +2383,6 @@ inline bool CLIntercept::checkAubCaptureEnqueueLimits() const
     {                                                                       \
         pIntercept->autoCreateSPIRV( _program, _options );                  \
     }
-
-#define INCREMENT_PROGRAM_COMPILE_COUNT( _program )                         \
-    if( _program &&                                                         \
-        ( pIntercept->config().BuildLogging ||                              \
-          pIntercept->config().KernelNameHashTracking ||                    \
-          pIntercept->config().InjectProgramSource ||                       \
-          pIntercept->config().DumpProgramSourceScript ||                   \
-          pIntercept->config().DumpProgramSource ||                         \
-          pIntercept->config().DumpProgramBinaries ||                       \
-          pIntercept->config().DumpProgramSPIRV ||                          \
-          pIntercept->config().DumpProgramBuildLogs ||                      \
-          pIntercept->config().DumpKernelISABinaries ||                     \
-          pIntercept->config().AutoCreateSPIRV ||                           \
-          pIntercept->config().AubCaptureUniqueKernels ) )                  \
-    {                                                                       \
-        pIntercept->incrementProgramCompileCount( _program );               \
-    }
-
-#define DELETE_MODIFIED_OPTIONS( newOptions )                               \
-    delete [] newOptions;                                                   \
-    newOptions = NULL;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -2077,38 +2409,30 @@ inline bool CLIntercept::checkAubCaptureEnqueueLimits() const
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-inline bool CLIntercept::checkHostPerformanceTimingEnqueueLimits() const
+inline bool CLIntercept::checkHostPerformanceTimingEnqueueLimits(
+    uint64_t enqueueCounter ) const
 {
-    return ( m_EnqueueCounter >= m_Config.HostPerformanceTimingMinEnqueue ) &&
-           ( m_EnqueueCounter <= m_Config.HostPerformanceTimingMaxEnqueue );
+    return ( enqueueCounter >= m_Config.HostPerformanceTimingMinEnqueue ) &&
+           ( enqueueCounter <= m_Config.HostPerformanceTimingMaxEnqueue );
 }
 
 #define CPU_PERFORMANCE_TIMING_START()                                      \
     CLIntercept::clock::time_point   cpuStart, cpuEnd;                      \
-    if( ( pIntercept->config().HostPerformanceTiming ||                     \
-          pIntercept->config().ChromeCallLogging ) &&                       \
-        pIntercept->checkHostPerformanceTimingEnqueueLimits() )             \
+    if( pIntercept->config().HostPerformanceTiming ||                       \
+        pIntercept->config().ChromeCallLogging )                            \
     {                                                                       \
         cpuStart = CLIntercept::clock::now();                               \
     }
 
 #define CPU_PERFORMANCE_TIMING_END()                                        \
-    if( ( pIntercept->config().HostPerformanceTiming ||                     \
-          pIntercept->config().ChromeCallLogging ) &&                       \
-        pIntercept->checkHostPerformanceTimingEnqueueLimits() )             \
+    if( pIntercept->config().HostPerformanceTiming ||                       \
+        pIntercept->config().ChromeCallLogging )                            \
     {                                                                       \
         cpuEnd = CLIntercept::clock::now();                                 \
-        if( pIntercept->config().HostPerformanceTiming )                    \
+        if( pIntercept->config().HostPerformanceTiming &&                   \
+            pIntercept->checkHostPerformanceTimingEnqueueLimits( enqueueCounter ) )\
         {                                                                   \
             pIntercept->updateHostTimingStats(                              \
-                __FUNCTION__,                                               \
-                NULL,                                                       \
-                cpuStart,                                                   \
-                cpuEnd );                                                   \
-        }                                                                   \
-        if( pIntercept->config().ChromeCallLogging )                        \
-        {                                                                   \
-            pIntercept->chromeCallLoggingExit(                              \
                 __FUNCTION__,                                               \
                 NULL,                                                       \
                 cpuStart,                                                   \
@@ -2117,22 +2441,14 @@ inline bool CLIntercept::checkHostPerformanceTimingEnqueueLimits() const
     }
 
 #define CPU_PERFORMANCE_TIMING_END_KERNEL( _kernel )                        \
-    if( ( pIntercept->config().HostPerformanceTiming ||                     \
-          pIntercept->config().ChromeCallLogging ) &&                       \
-        pIntercept->checkHostPerformanceTimingEnqueueLimits() )             \
+    if( pIntercept->config().HostPerformanceTiming ||                       \
+        pIntercept->config().ChromeCallLogging )                            \
     {                                                                       \
         cpuEnd = CLIntercept::clock::now();                                 \
-        if( pIntercept->config().HostPerformanceTiming )                    \
+        if( pIntercept->config().HostPerformanceTiming &&                   \
+            pIntercept->checkHostPerformanceTimingEnqueueLimits( enqueueCounter ) )\
         {                                                                   \
             pIntercept->updateHostTimingStats(                              \
-                __FUNCTION__,                                               \
-                _kernel,                                                    \
-                cpuStart,                                                   \
-                cpuEnd );                                                   \
-        }                                                                   \
-        if( pIntercept->config().ChromeCallLogging )                        \
-        {                                                                   \
-            pIntercept->chromeCallLoggingExit(                              \
                 __FUNCTION__,                                               \
                 _kernel,                                                    \
                 cpuStart,                                                   \
@@ -2142,11 +2458,22 @@ inline bool CLIntercept::checkHostPerformanceTimingEnqueueLimits() const
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-inline bool CLIntercept::checkDevicePerformanceTimingEnqueueLimits() const
+inline bool CLIntercept::checkDevicePerformanceTimingEnqueueLimits(
+    uint64_t enqueueCounter ) const
 {
-    return ( m_EnqueueCounter >= m_Config.DevicePerformanceTimingMinEnqueue ) &&
-           ( m_EnqueueCounter <= m_Config.DevicePerformanceTimingMaxEnqueue );
+    return ( enqueueCounter >= m_Config.DevicePerformanceTimingMinEnqueue ) &&
+           ( enqueueCounter <= m_Config.DevicePerformanceTimingMaxEnqueue );
 }
+
+#define CREATE_COMMAND_QUEUE_PROPERTIES( _device, _props, _newprops )       \
+    if( pIntercept->config().DefaultQueuePriorityHint ||                    \
+        pIntercept->config().DefaultQueueThrottleHint )                     \
+    {                                                                       \
+        pIntercept->createCommandQueueProperties(                           \
+            _device,                                                        \
+            _props,                                                         \
+            _newprops );                                                    \
+    }
 
 #define CREATE_COMMAND_QUEUE_OVERRIDE_INIT( _device, _props, _newprops )    \
     if( pIntercept->config().DevicePerformanceTiming ||                     \
@@ -2158,42 +2485,28 @@ inline bool CLIntercept::checkDevicePerformanceTimingEnqueueLimits() const
         pIntercept->config().DefaultQueuePriorityHint ||                    \
         pIntercept->config().DefaultQueueThrottleHint )                     \
     {                                                                       \
-        pIntercept->createCommandQueueOverrideInit(                         \
+        pIntercept->createCommandQueuePropertiesOverride(                   \
             _device,                                                        \
             _props,                                                         \
             _newprops );                                                    \
     }
 
-#define CREATE_COMMAND_QUEUE_OVERRIDE_CLEANUP( _newprops )                  \
-    if( pIntercept->config().DevicePerformanceTiming ||                     \
-        pIntercept->config().ITTPerformanceTiming ||                        \
-        pIntercept->config().ChromePerformanceTiming ||                     \
-        pIntercept->config().DevicePerfCounterEventBasedSampling ||         \
-        pIntercept->config().InOrderQueue ||                                \
-        pIntercept->config().NoProfilingQueue ||                            \
-        pIntercept->config().DefaultQueuePriorityHint ||                    \
-        pIntercept->config().DefaultQueueThrottleHint )                     \
-    {                                                                       \
-        pIntercept->createCommandQueueOverrideCleanup(                      \
-            _newprops );                                                    \
-    }
+#define COMMAND_QUEUE_PROPERTIES_CLEANUP( _newprops )                       \
+    delete [] _newprops;                                                    \
+    _newprops = NULL;
 
-#define CREATE_COMMAND_QUEUE_PROPERTIES_INIT( _device, _props, _newprops )  \
-    if( pIntercept->config().DefaultQueuePriorityHint ||                    \
-        pIntercept->config().DefaultQueueThrottleHint )                     \
+#define QUEUE_INFO_LOGGING( _device, _queue )                               \
+    if( pIntercept->config().QueueInfoLogging && ( _queue != NULL ) )       \
     {                                                                       \
-        pIntercept->createCommandQueuePropertiesInit(                       \
+        pIntercept->logQueueInfo(                                           \
             _device,                                                        \
-            _props,                                                         \
-            _newprops );                                                    \
+            _queue );                                                       \
     }
 
-#define CREATE_COMMAND_QUEUE_PROPERTIES_CLEANUP( _newprops )                \
-    if( pIntercept->config().DefaultQueuePriorityHint ||                    \
-        pIntercept->config().DefaultQueueThrottleHint )                     \
+#define DUMMY_COMMAND_QUEUE( _context, _device )                            \
+    if( pIntercept->config().DummyOutOfOrderQueue )                         \
     {                                                                       \
-        pIntercept->createCommandQueuePropertiesCleanup(                    \
-            _newprops );                                                    \
+        pIntercept->dummyCommandQueue( _context, _device );                 \
     }
 
 #define DEVICE_PERFORMANCE_TIMING_START( pEvent )                           \
@@ -2220,7 +2533,7 @@ inline bool CLIntercept::checkDevicePerformanceTimingEnqueueLimits() const
           pIntercept->config().DevicePerfCounterEventBasedSampling ) &&     \
         ( pEvent != NULL ) )                                                \
     {                                                                       \
-        if( !pIntercept->checkDevicePerformanceTimingEnqueueLimits() ||     \
+        if( !pIntercept->checkDevicePerformanceTimingEnqueueLimits( enqueueCounter ) ||\
             ( pIntercept->config().DevicePerformanceTimingSkipUnmap &&      \
               std::string(__FUNCTION__) == "clEnqueueUnmapMemObject" ) )    \
         {                                                                   \
@@ -2234,6 +2547,7 @@ inline bool CLIntercept::checkDevicePerformanceTimingEnqueueLimits() const
         {                                                                   \
             pIntercept->addTimingEvent(                                     \
                 __FUNCTION__,                                               \
+                enqueueCounter,                                             \
                 queuedTime,                                                 \
                 NULL,                                                       \
                 0, NULL, NULL, NULL,                                        \
@@ -2257,7 +2571,7 @@ inline bool CLIntercept::checkDevicePerformanceTimingEnqueueLimits() const
           pIntercept->config().DevicePerfCounterEventBasedSampling ) &&     \
         ( pEvent != NULL ) )                                                \
     {                                                                       \
-        if( !pIntercept->checkDevicePerformanceTimingEnqueueLimits() )      \
+        if( !pIntercept->checkDevicePerformanceTimingEnqueueLimits( enqueueCounter ) )\
         {                                                                   \
             if( retainAppEvent == false )                                   \
             {                                                               \
@@ -2269,6 +2583,7 @@ inline bool CLIntercept::checkDevicePerformanceTimingEnqueueLimits() const
         {                                                                   \
             pIntercept->addTimingEvent(                                     \
                 __FUNCTION__,                                               \
+                enqueueCounter,                                             \
                 queuedTime,                                                 \
                 kernel,                                                     \
                 wd, gwo, gws, lws,                                          \
@@ -2316,6 +2631,20 @@ inline bool CLIntercept::checkDevicePerformanceTimingEnqueueLimits() const
             _kernel,                                                        \
             _arg );                                                         \
     }
+
+///////////////////////////////////////////////////////////////////////////////
+//
+#define USM_ALLOC_OVERRIDE_INIT( _props, _newprops )                        \
+    if( pIntercept->config().RelaxAllocationLimits )                        \
+    {                                                                       \
+        pIntercept->usmAllocPropertiesOverride(                             \
+            _props,                                                         \
+            _newprops );                                                    \
+    }
+
+#define USM_ALLOC_PROPERTIES_CLEANUP( _newprops )                           \
+    delete [] _newprops;                                                    \
+    _newprops = NULL;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -2535,11 +2864,11 @@ inline void CLIntercept::logCL_GLTextureDetails( cl_mem image, cl_GLenum target,
     CALL_LOGGING_INFO(
         "CL Channel Order = %s, "
         "CL Channel Data Type = %s, "
-        "CL Row Pitch = %d, "
-        "CL Slice Pitch = %d, "
-        "CL Width = %d, "
-        "CL Height = %d, "
-        "CL Depth = %d, ",
+        "CL Row Pitch = %zu, "
+        "CL Slice Pitch = %zu, "
+        "CL Width = %zu, "
+        "CL Height = %zu, "
+        "CL Depth = %zu, ",
         enumName().name( cl_format.image_channel_order ).c_str(),
         enumName().name( cl_format.image_channel_data_type ).c_str(),
         cl_rowPitch,
